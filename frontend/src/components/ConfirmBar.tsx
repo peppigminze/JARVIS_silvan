@@ -5,12 +5,26 @@ import { usePolling } from "../hooks/usePolling";
 
 const TOOL_LABELS: Record<string, string> = {
   delete_task: "Aufgabe löschen",
+  write_file: "Datei schreiben",
+  move_file: "Datei verschieben",
+  copy_file: "Datei kopieren",
+  delete_file: "Datei/Ordner löschen",
+  run_command: "Terminal-Befehl ausführen",
+  open_application: "Programm öffnen",
+  close_application: "Programm schließen",
 };
+
+const MAX_ARG_PREVIEW = 80;
+
+function previewValue(value: unknown): string {
+  const text = typeof value === "string" ? value : JSON.stringify(value);
+  return text.length > MAX_ARG_PREVIEW ? `${text.slice(0, MAX_ARG_PREVIEW)}…` : text;
+}
 
 function describeAction(action: PendingAction): string {
   const label = TOOL_LABELS[action.tool_name] ?? action.tool_name;
   const args = Object.entries(action.arguments)
-    .map(([k, v]) => `${k}: ${v}`)
+    .map(([k, v]) => `${k}: ${previewValue(v)}`)
     .join(", ");
   return args ? `${label} (${args})` : label;
 }

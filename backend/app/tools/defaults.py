@@ -1,22 +1,68 @@
 from __future__ import annotations
 
+from app.tools.app_tools import CloseApplicationTool, ListRunningApplicationsTool, OpenApplicationTool
+from app.tools.file_tools import (
+    CopyFileTool,
+    DeleteFileTool,
+    ListFilesTool,
+    MoveFileTool,
+    ReadFileTool,
+    SearchFilesTool,
+    WriteFileTool,
+)
 from app.tools.memory_tools import SaveMemoryTool, SearchMemoryTool
 from app.tools.registry import ToolRegistry
-from app.tools.system_tools import GetCurrentTimeTool, GetSystemStatusTool
+from app.tools.system_tools import (
+    CpuUsageTool,
+    DiskUsageTool,
+    GetCurrentTimeTool,
+    GetSystemStatusTool,
+    NetworkStatusTool,
+    RamUsageTool,
+)
 from app.tools.task_tools import CompleteTaskTool, CreateTaskTool, DeleteTaskTool, ListTasksTool
+from app.tools.terminal_tools import RunCommandTool
 
 
 def build_default_registry() -> ToolRegistry:
-    """All V1 tools are SAFE. Dangerous PC tools (open_application,
-    delete_file, run_terminal_command, shutdown_pc, ...) are
-    intentionally NOT registered yet - see project spec section 12."""
+    """Tools with security = SAFE run automatically; CONFIRM_REQUIRED
+    tools always pause for human approval (project spec sections 12-14).
+    PC-control tools (files, terminal, applications) additionally only
+    ever touch ALLOWED_DIRECTORIES (app/tools/paths.py) - empty by
+    default, so they do nothing until the user opts a directory in."""
     registry = ToolRegistry()
+
+    # Tasks / memory / basic info - SAFE
     registry.register(CreateTaskTool())
     registry.register(ListTasksTool())
     registry.register(CompleteTaskTool())
-    registry.register(DeleteTaskTool())
     registry.register(SaveMemoryTool())
     registry.register(SearchMemoryTool())
     registry.register(GetCurrentTimeTool())
     registry.register(GetSystemStatusTool())
+    registry.register(CpuUsageTool())
+    registry.register(RamUsageTool())
+    registry.register(DiskUsageTool())
+    registry.register(NetworkStatusTool())
+
+    # Destructive / task-affecting - CONFIRM_REQUIRED
+    registry.register(DeleteTaskTool())
+
+    # Files - read-only SAFE, mutating CONFIRM_REQUIRED
+    registry.register(ListFilesTool())
+    registry.register(ReadFileTool())
+    registry.register(SearchFilesTool())
+    registry.register(WriteFileTool())
+    registry.register(MoveFileTool())
+    registry.register(CopyFileTool())
+    registry.register(DeleteFileTool())
+
+    # Applications - listing is SAFE, opening/closing is CONFIRM_REQUIRED
+    registry.register(ListRunningApplicationsTool())
+    registry.register(OpenApplicationTool())
+    registry.register(CloseApplicationTool())
+
+    # Terminal - always CONFIRM_REQUIRED, plus a hard denylist
+    registry.register(RunCommandTool())
+
     return registry

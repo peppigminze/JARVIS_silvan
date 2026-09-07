@@ -269,6 +269,25 @@ class AgentHeartbeat(Base):
     last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class CommandLog(Base):
+    """Audit trail for every run_command execution (project spec section
+    15: "command logging"). A brand-new table - no migration risk. Never
+    delete rows here automatically; this is the record of what JARVIS
+    actually ran on the user's PC."""
+
+    __tablename__ = "command_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    command: Mapped[str] = mapped_column(Text, nullable=False)
+    working_dir: Mapped[str] = mapped_column(Text, nullable=False)
+    exit_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    stdout: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    stderr: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    timed_out: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 def run_migrations() -> None:
     """Additive, idempotent column migrations for tables that predate a
     field (see ensure_columns() in app/database/db.py). Called from

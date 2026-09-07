@@ -6,18 +6,24 @@ Sprachmodell läuft über eine lokale LLM-Runtime (z. B. [Ollama](https://ollama
 
 Dieses Repository enthält die erste funktionierende Version (V1):
 
-- ein **FastAPI-Backend** (Chat, Tasks, Memory, Sync-Queue, Auth)
+- ein **FastAPI-Backend** (Chat, Tasks, Memory, Sync-Queue, Auth, Reminder-Scheduler)
 - einen **lokalen PC-Agent-Prozess**, der Nachrichten mit dem lokalen LLM
-  und einem einfachen Tool-System verarbeitet
+  und einem mehrschrittigen Tool-System verarbeitet - inklusive echter
+  PC-Steuerung (Dateien, Terminal, Programme) mit Bestätigungspflicht
 - eine **React/TypeScript PWA**, die auch dann nutzbar ist, wenn dein PC
   gerade ausgeschaltet ist (Nachrichten werden dann als `pending`
   gespeichert und automatisch verarbeitet, sobald der PC wieder online ist)
 
-> **Was V1 NICHT kann (bewusst, siehe Abschnitt "Roadmap"):** Programme
-> öffnen, Dateien bearbeiten, Terminal-Befehle ausführen, Browser/GitHub
-> steuern. Das Framework dafür (Tool-Sicherheitsmodell) ist vorbereitet,
-> aber es sind in V1 absichtlich noch keine gefährlichen Tools
-> implementiert.
+> **Sicherheitsmodell:** Jedes Tool hat eine Sicherheitsstufe (`SAFE` /
+> `CONFIRM_REQUIRED` / `BLOCKED`). Lesende Aktionen (Dateien auflisten/lesen,
+> Systeminfos) laufen automatisch. Alles, was etwas verändert - Datei
+> schreiben/verschieben/löschen, Programme öffnen/schließen, Terminal-Befehle -
+> pausiert die Pipeline und wartet auf deine Bestätigung in der PWA. Datei-
+> und Terminal-Tools sind zusätzlich auf `ALLOWED_DIRECTORIES` beschränkt
+> (leer per Default - siehe Abschnitt 6) und ein harter Denylist blockt
+> offensichtlich katastrophale Befehle (Formatieren, `shutdown`, Fork-Bombs, ...)
+> noch bevor sie zur Bestätigung kommen. Siehe Abschnitt 16 "Tool-Sicherheit"
+> für Details.
 
 ---
 
@@ -38,6 +44,7 @@ Dieses Repository enthält die erste funktionierende Version (V1):
 13. [Projektstruktur](#13-projektstruktur)
 14. [Architektur](#14-architektur)
 15. [Roadmap / bekannte Einschränkungen von V1](#15-roadmap--bekannte-einschränkungen-von-v1)
+16. [Tool-Sicherheit](#16-tool-sicherheit)
 
 ---
 
@@ -117,6 +124,13 @@ AGENT_TOKEN=ein-anderer-langer-zufälliger-string
 
 Falls du ein anderes Modell als `llama3.1:8b` heruntergeladen hast, passe
 `LOCAL_LLM_MODEL` entsprechend an.
+
+Trage außerdem ein, welche Verzeichnisse JARVIS' Datei- und
+Terminal-Tools anfassen dürfen (leer = alles deaktiviert):
+
+```env
+ALLOWED_DIRECTORIES=C:\Users\du\Documents\Projects,C:\Users\du\Desktop
+```
 
 Kopiere außerdem die Frontend-Env-Datei:
 
@@ -293,10 +307,9 @@ Agent wieder online ist und pollt.
 Bewusst **nicht** in V1 enthalten (siehe Auftrag, Abschnitt "Keine
 Fake-Features" - nichts davon ist vorgetäuscht, es ist als TODO markiert):
 
-- **PC-Steuerung**: Dateien/Programme öffnen, Terminal-Befehle,
-  Browser-/Git-/GitHub-Automatisierung. Das Sicherheitsmodell
-  (`SAFE` / `CONFIRM_REQUIRED` / `BLOCKED`) in `app/tools/base.py` ist
-  vorbereitet, aber es sind noch keine gefährlichen Tools registriert.
+- **Browser-/GitHub-Automatisierung** (Web-Recherche, `git`/GitHub-Tools) -
+  Dateisystem/Terminal/Programme sind seit Phase 5 implementiert, siehe
+  Abschnitt 16 "Tool-Sicherheit".
 - **Vector-Search / Embeddings** für Memory - aktuell einfache
   Keyword-Suche (`MemoryStore.search`), die Schnittstelle ist aber
   stabil und austauschbar.
@@ -304,10 +317,47 @@ Fake-Features" - nichts davon ist vorgetäuscht, es ist als TODO markiert):
   `LLMProvider`-Abstraktion und die Factory (`app/llm/factory.py`) sind
   vorbereitet, es muss nur eine neue Klasse ergänzt werden.
 - **Voice-Interface**, Desktop-UI, weitere Clients.
-- **Confirmation-UI** für `CONFIRM_REQUIRED`-Tools (aktuell werden
-  solche Tools einfach nicht ausgeführt, statt automatisch zu laufen).
 - **Push-Benachrichtigungen** an das Handy, wenn eine Nachricht fertig
-  verarbeitet wurde (aktuell reines Polling alle paar Sekunden).
+  verarbeitet wurde (aktuell Browser-Notifications per Polling, siehe
+  `useReminderNotifications.ts` - reines mobiles Push ist ein späterer Schritt).
+- **Wake-on-LAN**, automatischer PC-Autostart des Agents.
 
 Diese Punkte sind absichtlich für spätere Versionen zurückgestellt, um
 eine kleine, tatsächlich funktionierende V1 zu priorisieren.
+
+## 16. Tool-Sicherheit
+
+Jedes Tool (`app/tools/*.py`) trägt eine Sicherheitsstufe:
+
+| Stufe | Bedeutung | Beispiele |
+|---|---|---|
+| `SAFE` | läuft automatisch, ohne Rückfrage | `list_tasks`, `read_file`, `list_files`, `search_files`, `cpu_usage`, `ram_usage`, `disk_usage`, `network_status`, `list_running_applications`, `get_current_time`, `save_memory`, `search_memory` |
+| `CONFIRM_REQUIRED` | pausiert die Pipeline; ein Mensch muss in der PWA bestätigen/ablehnen | `write_file`, `move_file`, `copy_file`, `delete_file`, `delete_task`, `run_command`, `open_application`, `close_application` |
+| `BLOCKED` | (Framework vorhanden, aktuell nicht genutzt) | - |
+
+**Confirmation-Flow:** Wählt das Modell ein `CONFIRM_REQUIRED`-Tool, pausiert
+`JarvisAgent.run_pipeline` (`app/agent/core.py`) sofort - das Tool wird
+*nicht* ausgeführt. Stattdessen entsteht ein `PendingAction`-Eintrag
+(`app/database/models.py`), die Nachricht bleibt `processing`, und die PWA
+zeigt eine Bestätigen/Abbrechen-Leiste (`ConfirmBar.tsx`). Erst nach
+Bestätigung holt der Agent die Aktion über `GET /api/sync/confirmed-actions`
+ab, führt sie lokal aus und setzt die Pipeline mit dem Ergebnis fort - auch
+mehrfach verkettet, falls danach noch ein weiteres bestätigungspflichtiges
+Tool nötig ist. Bei Ablehnung wird die Nachricht mit einer kurzen Absage
+abgeschlossen, ohne dass irgendetwas ausgeführt wurde.
+
+**Dateisystem-Sandbox:** Alle Datei- und Terminal-Tools lösen Pfade über
+`resolve_allowed_path()` (`app/tools/paths.py`) auf - Symlinks/`..` werden
+aufgelöst, danach muss der Pfad innerhalb einer der in `ALLOWED_DIRECTORIES`
+konfigurierten Verzeichnisse liegen. Ist die Variable leer (Standard), ist
+jeder Dateizugriff blockiert. `delete_file` löscht zusätzlich nur leere
+Ordner (kein rekursives `rmtree` durch einen einzelnen Tool-Call möglich).
+
+**Terminal-Denylist:** `run_command` und `open_application` prüfen den
+Befehl zusätzlich gegen einen harten Denylist (`app/tools/command_safety.py`)
+für offensichtlich katastrophale Muster (Laufwerk formatieren, `shutdown`,
+Fork-Bomb, rekursives Löschen von `/` oder `~`, ...) - diese werden
+abgelehnt, bevor sie überhaupt zur Bestätigung kommen. Jeder tatsächlich
+ausgeführte Befehl wird mit Befehl, Arbeitsverzeichnis, stdout/stderr,
+Exit-Code und Timeout-Status in `command_logs` protokolliert
+(`app/tools/terminal_tools.py`).

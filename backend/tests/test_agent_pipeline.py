@@ -140,6 +140,45 @@ async def test_pipeline_resumes_after_confirmation(db_session):
     assert result.reply == "Task 1 wurde gelöscht."
 
 
+async def test_pipeline_does_not_re_pause_on_a_repeated_failed_confirm_required_call(db_session):
+    """Regression test for a bug found live: a write_file call rejected
+    by the ALLOWED_DIRECTORIES sandbox got retried unchanged by
+    llama3.1:8b, creating a second, identical PendingAction and leaving
+    the message stuck in 'processing' forever since nothing ever
+    resolved it. Retrying an identical call that already failed must
+    stop the pipeline instead of pausing again on the same dead end."""
+    llm = ScriptedLLM(
+        [
+            # Model retries the exact same (already-failed) call instead
+            # of giving up or trying something different:
+            plan_json(
+                tool="write_file",
+                arguments={"path": "C:\\Windows\\evil.txt", "content": "x"},
+                done=False,
+                reply="retrying",
+            ),
+            "Das konnte ich leider nicht ausführen.",
+        ]
+    )
+    agent = JarvisAgent(llm=llm, tools=build_default_registry())
+
+    # Simulate: first attempt paused (write_file is CONFIRM_REQUIRED), the
+    # human confirmed it, the agent executed it, and it failed (outside
+    # ALLOWED_DIRECTORIES) - resuming with that failed observation.
+    from app.tools.base import ToolResult
+
+    failed_result = ToolResult(success=False, error="Path is outside the allowed directories.")
+    observations = [
+        agent.build_observation("write_file", {"path": "C:\\Windows\\evil.txt", "content": "x"}, failed_result)
+    ]
+
+    result = await agent.run_pipeline(db_session, "Write a file to C:\\Windows", observations=observations)
+
+    assert result.done is True
+    assert result.pending_tool is None
+    assert len(result.observations) == 1  # the repeat was never re-attempted or re-paused on
+
+
 async def test_pipeline_stops_at_max_steps_instead_of_looping_forever(db_session):
     # Always asks for another (safe) tool call with different arguments
     # each time (so the anti-duplication guard doesn't short-circuit it),

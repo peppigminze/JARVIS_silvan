@@ -229,11 +229,18 @@ class JarvisAgent:
             return ToolResult(success=False, error="Die Aktion konnte nicht ausgeführt werden.")
 
     @staticmethod
-    def _already_succeeded(observations: List[dict], tool_name: str, arguments: dict) -> bool:
-        return any(
-            o.get("tool") == tool_name and o.get("arguments") == arguments and "result" in o
-            for o in observations
-        )
+    def _already_attempted(observations: List[dict], tool_name: str, arguments: dict) -> bool:
+        """True if this exact (tool, arguments) pair already has an
+        observation, success OR failure. Retrying an identical call that
+        already succeeded would duplicate a side effect; retrying one
+        that already failed can't magically succeed the second time and
+        - for a CONFIRM_REQUIRED tool - would otherwise re-pause the
+        pipeline on the same doomed action forever, asking the human to
+        confirm the same failing write_file/run_command repeatedly.
+        Verified live: without this, a write_file call rejected by the
+        ALLOWED_DIRECTORIES sandbox got retried unchanged by
+        llama3.1:8b and created a second, identical confirmation request."""
+        return any(o.get("tool") == tool_name and o.get("arguments") == arguments for o in observations)
 
     @staticmethod
     def build_observation(tool_name: str, arguments: dict, result: ToolResult) -> dict:
@@ -306,15 +313,10 @@ class JarvisAgent:
                 steps_taken += 1
                 continue
 
-            if self._already_succeeded(observations, decision.tool, decision.arguments):
-                # Small local models sometimes ignore "done" and repeat the
-                # exact same call. Re-running it would silently duplicate a
-                # side effect (e.g. creating the same task twice), so treat
-                # a repeat of an already-successful call as implicit "done"
-                # instead of executing it again.
+            if self._already_attempted(observations, decision.tool, decision.arguments):
                 logger.warning(
-                    "Model repeated an already-successful call to '%s' with identical "
-                    "arguments - stopping instead of re-executing it.",
+                    "Model repeated an identical call to '%s' that was already attempted - "
+                    "stopping instead of re-running or re-pausing on it.",
                     decision.tool,
                 )
                 reply = await self._summarize(content, observations)

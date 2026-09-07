@@ -51,9 +51,19 @@ class Settings(BaseSettings):
     AGENT_POLL_INTERVAL_SECONDS: float = 5.0
     AGENT_HEARTBEAT_INTERVAL_SECONDS: float = 15.0
 
+    # PC control tools (project spec sections 13/16). Comma-separated
+    # absolute paths. Empty by default - file/terminal tools refuse to
+    # touch anything until the user explicitly opts a directory in.
+    ALLOWED_DIRECTORIES: str = ""
+    TERMINAL_TIMEOUT_SECONDS: float = 30.0
+
     @property
     def cors_origins_list(self) -> List[str]:
         return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
+
+    @property
+    def allowed_directories_list(self) -> List[str]:
+        return [d.strip() for d in self.ALLOWED_DIRECTORIES.split(",") if d.strip()]
 
 
 @lru_cache
