@@ -53,7 +53,7 @@ from app.config import get_settings  # noqa: E402
 from app.database.db import init_db, session_scope  # noqa: E402
 from app.database.models import Message  # noqa: E402
 from app.llm.base import LLMUnavailableError  # noqa: E402
-from app.llm.factory import get_llm_provider  # noqa: E402
+from app.llm.factory import get_cloud_llm_provider, get_llm_provider  # noqa: E402
 from app.tools.defaults import build_default_registry  # noqa: E402
 
 from agent.client import BackendClient  # noqa: E402
@@ -65,7 +65,11 @@ class SyncWorker:
     def __init__(self, client: BackendClient):
         self.client = client
         settings = get_settings()
-        self.jarvis = JarvisAgent(llm=get_llm_provider(settings), tools=build_default_registry())
+        self.jarvis = JarvisAgent(
+            llm=get_llm_provider(settings),
+            tools=build_default_registry(),
+            cloud_llm=get_cloud_llm_provider(settings),
+        )
 
     async def poll_once(self) -> int:
         """One full cycle: process new pending messages, then confirmed

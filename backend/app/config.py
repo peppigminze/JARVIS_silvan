@@ -64,6 +64,17 @@ class Settings(BaseSettings):
     MESSAGE_MAX_RETRIES: int = 3
     MESSAGE_RETRY_BACKOFF_SECONDS: float = 15.0
 
+    # Cloud LLM fallback (project spec sections 8/9). LOCAL FIRST,
+    # ALWAYS - disabled by default, so JARVIS never makes a paid API
+    # call unless the user explicitly opts in here AND supplies their
+    # own key. Only used when the local LLM raises LLMUnavailableError;
+    # never used just because the cloud model might be "better".
+    CLOUD_LLM_ENABLED: bool = False
+    CLOUD_LLM_BASE_URL: str = "https://api.openai.com/v1"
+    CLOUD_LLM_MODEL: str = "gpt-4o-mini"
+    CLOUD_LLM_API_KEY: str = ""
+    CLOUD_LLM_TIMEOUT_SECONDS: float = 30.0
+
     @property
     def cors_origins_list(self) -> List[str]:
         return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]

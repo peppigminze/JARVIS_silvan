@@ -45,6 +45,7 @@ Dieses Repository enthält die erste funktionierende Version (V1):
 14. [Architektur](#14-architektur)
 15. [Roadmap / bekannte Einschränkungen von V1](#15-roadmap--bekannte-einschränkungen-von-v1)
 16. [Tool-Sicherheit](#16-tool-sicherheit)
+17. [Cloud-LLM-Fallback (optional)](#17-cloud-llm-fallback-optional)
 
 ---
 
@@ -361,3 +362,34 @@ abgelehnt, bevor sie überhaupt zur Bestätigung kommen. Jeder tatsächlich
 ausgeführte Befehl wird mit Befehl, Arbeitsverzeichnis, stdout/stderr,
 Exit-Code und Timeout-Status in `command_logs` protokolliert
 (`app/tools/terminal_tools.py`).
+
+## 17. Cloud-LLM-Fallback (optional)
+
+**LOCAL FIRST, immer:** JARVIS nutzt standardmäßig ausschließlich das lokale
+Modell. Ein Cloud-Fallback ist vorhanden, aber per Default deaktiviert und
+kostet dich nichts, bis du ihn explizit aktivierst:
+
+```env
+CLOUD_LLM_ENABLED=true
+CLOUD_LLM_BASE_URL=https://api.openai.com/v1
+CLOUD_LLM_MODEL=gpt-4o-mini
+CLOUD_LLM_API_KEY=dein-eigener-api-key
+```
+
+`CloudLLMProvider` (`app/llm/cloud_provider.py`) spricht das
+OpenAI-kompatible Chat-Completions-Format, funktioniert also mit der
+echten OpenAI-API und mit jedem kompatiblen Anbieter, wenn du
+`CLOUD_LLM_BASE_URL` entsprechend änderst. Er wird **ausschließlich**
+dann versucht, wenn das lokale Modell selbst nicht erreichbar ist
+(`JarvisAgent._chat`, `app/agent/core.py`) - niemals, weil das
+Cloud-Modell "besser" sein könnte. Ist er deaktiviert oder kein API-Key
+gesetzt, verhält sich JARVIS exakt wie ohne diesen Abschnitt: Eine
+Nachricht wird bei nicht erreichbarem lokalem LLM automatisch mit
+Backoff wiederholt (siehe Abschnitt "Sync" oben) statt an die Cloud zu
+gehen. Der API-Key steht ausschließlich in deiner lokalen `.env` und
+wird nirgends hardcodiert oder geloggt.
+
+> **Hinweis:** Dieser Fallback wurde mit Fake-Providern unit-getestet
+> (`backend/tests/test_cloud_fallback.py`), aber nicht live gegen eine
+> echte Cloud-API verifiziert - dafür bräuchte es deinen eigenen,
+> echten API-Key. Prüfe das selbst, bevor du dich darauf verlässt.

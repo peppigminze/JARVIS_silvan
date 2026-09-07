@@ -129,9 +129,26 @@ class PipelineResult:
 
 
 class JarvisAgent:
-    def __init__(self, llm: LLMProvider, tools: ToolRegistry):
+    def __init__(self, llm: LLMProvider, tools: ToolRegistry, cloud_llm: Optional[LLMProvider] = None):
         self.llm = llm
         self.tools = tools
+        # Optional cloud fallback (project spec sections 8/9) - only
+        # ever tried when `llm` itself raises LLMUnavailableError, never
+        # as a first choice. None unless the user explicitly enabled it
+        # and configured an API key (see app/llm/factory.py).
+        self.cloud_llm = cloud_llm
+
+    async def _chat(self, messages: List[ChatMessage], temperature: float = 0.3) -> str:
+        """LOCAL FIRST, always: try the primary (local) LLM, and only if
+        it's unreachable AND a cloud fallback is configured, try that
+        instead. If neither works, the original local error propagates."""
+        try:
+            return await self.llm.chat(messages, temperature=temperature)
+        except LLMUnavailableError:
+            if self.cloud_llm is None:
+                raise
+            logger.warning("Local LLM unavailable - falling back to cloud LLM.")
+            return await self.cloud_llm.chat(messages, temperature=temperature)
 
     # ---------------------------------------------------------- receive
 
@@ -175,7 +192,7 @@ class JarvisAgent:
             {"role": "user", "content": content},
         ]
 
-        raw = await self.llm.chat(messages, temperature=0.2)
+        raw = await self._chat(messages, temperature=0.2)
         return self._parse_plan(raw)
 
     def _parse_plan(self, raw: str) -> PlanDecision:
@@ -260,7 +277,7 @@ class JarvisAgent:
                 "Sag dem Nutzer ehrlich, was du bereits herausgefunden/getan hast und was noch offen ist."
             )
         try:
-            summary = await self.llm.chat(
+            summary = await self._chat(
                 [
                     {"role": "system", "content": "You write short, friendly assistant replies."},
                     {"role": "user", "content": prompt},
