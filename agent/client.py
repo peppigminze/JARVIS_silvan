@@ -50,6 +50,22 @@ class BackendClient:
             )
             resp.raise_for_status()
 
+    async def retry_message(
+        self, message_id: int, retry_count: int, next_retry_at: str, error: str
+    ) -> None:
+        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+            resp = await client.post(
+                f"{self.base_url}/api/sync/retry",
+                json={
+                    "message_id": message_id,
+                    "retry_count": retry_count,
+                    "next_retry_at": next_retry_at,
+                    "error": error,
+                },
+                headers=self.headers,
+            )
+            resp.raise_for_status()
+
     async def send_heartbeat(self) -> None:
         async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
             resp = await client.post(

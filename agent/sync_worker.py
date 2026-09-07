@@ -9,6 +9,10 @@ Two things are polled every cycle (see project spec sections 3, 14, 19):
            - finished            -> POST /api/sync/complete
            - paused (needs a     -> POST /api/sync/actions (PendingAction),
              human confirmation)    message stays 'processing' until resolved
+           - local LLM down      -> POST /api/sync/retry (requeued with
+                                     backoff, up to MESSAGE_MAX_RETRIES -
+                                     see _retry_or_fail() - before finally
+                                     POST /api/sync/fail)
 
     2. GET /api/sync/confirmed-actions
         -> for each action a human just approved via the PWA: execute
@@ -28,6 +32,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # The agent reuses the backend's app package directly (Agent Core, LLM
@@ -96,17 +101,47 @@ class SyncWorker:
     async def _process_message(self, msg: dict) -> None:
         message_id = msg["id"]
         content = msg["content"]
-        logger.info("Processing message %s", message_id)
+        retry_count = msg.get("retry_count", 0)
+        logger.info("Processing message %s (retry_count=%d)", message_id, retry_count)
         try:
             with session_scope() as db:
                 result = await self.jarvis.run_pipeline(db, content)
             await self._apply_result(message_id, result)
         except LLMUnavailableError:
             logger.error("Local LLM is unavailable while processing message %s", message_id)
-            await self._safe_fail_message(message_id, "Local LLM is unavailable.")
+            await self._retry_or_fail(message_id, retry_count, "Local LLM is unavailable.")
         except Exception:  # noqa: BLE001
             logger.exception("Unexpected error processing message %s", message_id)
             await self._safe_fail_message(message_id, "Die Aktion konnte nicht ausgeführt werden.")
+
+    async def _retry_or_fail(self, message_id: int, retry_count: int, error: str) -> None:
+        """A transient failure (local LLM unreachable) requeues the
+        message with backoff instead of failing it permanently, up to
+        MESSAGE_MAX_RETRIES - see project spec section 19."""
+        settings = get_settings()
+        if retry_count >= settings.MESSAGE_MAX_RETRIES:
+            logger.warning("Message %s exhausted %d retries - failing permanently.", message_id, retry_count)
+            await self._safe_fail_message(
+                message_id, f"{error} (nach {retry_count} Versuchen aufgegeben.)"
+            )
+            return
+
+        next_retry_count = retry_count + 1
+        backoff = settings.MESSAGE_RETRY_BACKOFF_SECONDS * next_retry_count
+        next_retry_at = datetime.now(timezone.utc) + timedelta(seconds=backoff)
+        try:
+            await self.client.retry_message(
+                message_id, next_retry_count, next_retry_at.isoformat(), error
+            )
+            logger.info(
+                "Message %s requeued for retry %d/%d in %.0fs.",
+                message_id,
+                next_retry_count,
+                settings.MESSAGE_MAX_RETRIES,
+                backoff,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Could not requeue message %s for retry: %s", message_id, exc)
 
     async def _process_confirmed_action(self, action: dict) -> None:
         action_id = action["id"]

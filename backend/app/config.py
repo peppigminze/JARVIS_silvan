@@ -57,6 +57,13 @@ class Settings(BaseSettings):
     ALLOWED_DIRECTORIES: str = ""
     TERMINAL_TIMEOUT_SECONDS: float = 30.0
 
+    # Sync/message retries (project spec section 19). A message that
+    # fails because the local LLM was unreachable gets requeued instead
+    # of failing permanently, up to this many times, with an increasing
+    # backoff so a down Ollama isn't hammered every poll interval.
+    MESSAGE_MAX_RETRIES: int = 3
+    MESSAGE_RETRY_BACKOFF_SECONDS: float = 15.0
+
     @property
     def cors_origins_list(self) -> List[str]:
         return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]

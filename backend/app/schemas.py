@@ -37,6 +37,7 @@ class MessageOut(BaseModel):
     status: MessageStatus
     response: Optional[str]
     error: Optional[str]
+    retry_count: int
     created_at: datetime
     processed_at: Optional[datetime]
 
@@ -172,6 +173,13 @@ class SyncCompleteRequest(BaseModel):
 class SyncFailRequest(BaseModel):
     message_id: int
     error: str
+
+
+class SyncRetryRequest(BaseModel):
+    message_id: int
+    retry_count: int
+    next_retry_at: Optional[datetime] = None
+    error: Optional[str] = None
 
 
 # ---------------------------------------------------------------- Agent / status

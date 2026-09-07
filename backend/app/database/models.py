@@ -71,6 +71,14 @@ class Message(Base):
     response: Mapped[str | None] = mapped_column(Text, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Retry bookkeeping (project spec section 19). Added via an additive
+    # migration (run_migrations() below) so existing messages survive.
+    retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    # Set when a transient failure (e.g. local LLM unreachable) requeues
+    # the message - GET /api/sync/pending skips it until this time has
+    # passed, so a down Ollama doesn't get hammered every poll interval.
+    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -306,5 +314,12 @@ def run_migrations() -> None:
             "reminder_enabled": "INTEGER NOT NULL DEFAULT 0",
             "recurrence": f"VARCHAR(16) NOT NULL DEFAULT '{DEFAULT_RECURRENCE}'",
             "last_notified_at": "DATETIME",
+        },
+    )
+    ensure_columns(
+        "messages",
+        {
+            "retry_count": "INTEGER NOT NULL DEFAULT 0",
+            "next_retry_at": "DATETIME",
         },
     )

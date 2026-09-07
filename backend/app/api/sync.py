@@ -18,6 +18,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from sqlalchemy import or_
+
 from app.auth import require_agent
 from app.database.db import get_db
 from app.database.models import ActionStatus, Message, MessageStatus, PendingAction
@@ -29,6 +31,7 @@ from app.schemas import (
     PendingActionOut,
     SyncCompleteRequest,
     SyncFailRequest,
+    SyncRetryRequest,
 )
 
 router = APIRouter(prefix="/api/sync", tags=["sync"])
@@ -46,9 +49,13 @@ def get_pending(
     twice if it polls again before finishing (simple locking, see
     project spec section 14).
     """
+    now = datetime.now(timezone.utc)
     stmt = (
         select(Message)
-        .where(Message.status == MessageStatus.pending)
+        .where(
+            Message.status == MessageStatus.pending,
+            or_(Message.next_retry_at.is_(None), Message.next_retry_at <= now),
+        )
         .order_by(Message.created_at.asc())
         .limit(limit)
     )
@@ -74,6 +81,28 @@ def complete_message(
     message.status = MessageStatus.completed
     message.error = None
     message.processed_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(message)
+    return message
+
+
+@router.post("/retry", response_model=MessageOut)
+def retry_message(
+    payload: SyncRetryRequest,
+    db: Session = Depends(get_db),
+    _agent=Depends(require_agent),
+) -> Message:
+    """Requeue a message after a transient failure (e.g. the local LLM
+    was unreachable) instead of failing it permanently - see
+    agent/sync_worker.py for the retry-vs-give-up decision and
+    MESSAGE_MAX_RETRIES/MESSAGE_RETRY_BACKOFF_SECONDS in app/config.py."""
+    message = db.get(Message, payload.message_id)
+    if message is None:
+        raise HTTPException(status_code=404, detail="Message not found.")
+    message.status = MessageStatus.pending
+    message.retry_count = payload.retry_count
+    message.next_retry_at = payload.next_retry_at
+    message.error = payload.error
     db.commit()
     db.refresh(message)
     return message
