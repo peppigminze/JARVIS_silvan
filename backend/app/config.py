@@ -8,14 +8,20 @@ ship - the *.env.example* file documents which variables must be set.
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 from typing import List
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# The .env file lives in the project root (shared with agent/run_agent.py),
+# not in backend/, so it must be resolved relative to this file rather than
+# to the current working directory of whoever launches uvicorn.
+_PROJECT_ROOT_ENV = Path(__file__).resolve().parent.parent.parent / ".env"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_PROJECT_ROOT_ENV,
         env_file_encoding="utf-8",
         extra="ignore",
     )
