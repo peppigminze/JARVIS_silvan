@@ -6,7 +6,7 @@ from typing import Any, Dict
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.database.models import Task, TaskPriority, TaskStatus
+from app.database.models import Task, TaskPriority, TaskStatus, utcnow
 from app.tools.base import Tool, ToolResult, ToolSecurity
 
 
@@ -82,7 +82,7 @@ class CompleteTaskTool(Tool):
         if task is None:
             return ToolResult(success=False, error=f"Task {task_id} not found.")
         task.status = TaskStatus.completed
-        task.completed_at = datetime.utcnow()
+        task.completed_at = utcnow()
         db.commit()
         return ToolResult(success=True, data={"id": task.id, "status": task.status.value})
 
@@ -91,7 +91,12 @@ class DeleteTaskTool(Tool):
     name = "delete_task"
     description = "Delete a task by its id."
     parameters = {"type": "object", "properties": {"task_id": {"type": "integer"}}, "required": ["task_id"]}
-    security = ToolSecurity.SAFE
+    # Destructive - the agent may never run this automatically (see
+    # project spec section 14). The human user can still delete tasks
+    # directly through the authenticated REST endpoint / UI; this only
+    # blocks the LLM-driven autonomous tool call until a confirmation
+    # UI exists (see project spec section 30/14).
+    security = ToolSecurity.CONFIRM_REQUIRED
 
     async def execute(self, db: Session, task_id: int, **_) -> ToolResult:
         task = db.get(Task, task_id)
