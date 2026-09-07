@@ -12,7 +12,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import get_settings
@@ -69,11 +69,33 @@ class Base(DeclarativeBase):
     pass
 
 
+def ensure_columns(table_name: str, column_defs: dict[str, str]) -> None:
+    """Add any columns in `column_defs` (name -> full "TYPE ..." DDL,
+    e.g. "TEXT NOT NULL DEFAULT 'fact'") that don't already exist on
+    `table_name`. No-op for columns that are already there.
+
+    There is no Alembic in V1 (see project spec section 32: "vermeide
+    unnötige Migrationen ohne Grund"), but a bare `Base.metadata.create_all()`
+    only creates missing *tables* - it silently does nothing for a new
+    column on a table that already exists, which would crash the first
+    request that touches it. This is the minimal safe alternative:
+    additive, idempotent, and never touches or drops existing data.
+    """
+    with engine.connect() as conn:
+        existing = {row[1] for row in conn.execute(text(f"PRAGMA table_info({table_name})"))}
+        for column, ddl in column_defs.items():
+            if column not in existing:
+                conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column} {ddl}"))
+        conn.commit()
+
+
 def init_db() -> None:
-    """Create all tables. Safe to call multiple times."""
+    """Create all tables and apply any additive column migrations.
+    Safe to call multiple times."""
     from app.database import models  # noqa: F401  (ensure models are registered)
 
     Base.metadata.create_all(bind=engine)
+    models.run_migrations()
 
 
 def get_db() -> Generator[Session, None, None]:

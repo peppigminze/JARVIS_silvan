@@ -3,9 +3,16 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.database.models import ActionStatus, MessageStatus, TaskPriority, TaskStatus
+from app.database.models import (
+    MEMORY_TYPES,
+    ActionStatus,
+    DEFAULT_MEMORY_TYPE,
+    MessageStatus,
+    TaskPriority,
+    TaskStatus,
+)
 
 # ---------------------------------------------------------------- Messages
 
@@ -69,6 +76,14 @@ class TaskOut(BaseModel):
 class MemoryCreate(BaseModel):
     content: str = Field(min_length=1, max_length=4000)
     category: Optional[str] = Field(default=None, max_length=64)
+    memory_type: str = Field(default=DEFAULT_MEMORY_TYPE, max_length=32)
+
+    @field_validator("memory_type")
+    @classmethod
+    def _valid_memory_type(cls, v: str) -> str:
+        if v not in MEMORY_TYPES:
+            raise ValueError(f"memory_type must be one of {MEMORY_TYPES}")
+        return v
 
 
 class MemoryOut(BaseModel):
@@ -77,6 +92,7 @@ class MemoryOut(BaseModel):
     id: int
     content: str
     category: Optional[str]
+    memory_type: str
     created_at: datetime
     updated_at: datetime
 

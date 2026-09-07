@@ -14,15 +14,19 @@ from typing import List, Optional, Sequence
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.database.models import MemoryEntry
+from app.database.models import DEFAULT_MEMORY_TYPE, MEMORY_TYPES, MemoryEntry
 
 
 class MemoryStore:
     def __init__(self, db: Session):
         self.db = db
 
-    def save(self, content: str, category: Optional[str] = None) -> MemoryEntry:
-        entry = MemoryEntry(content=content, category=category)
+    def save(
+        self, content: str, category: Optional[str] = None, memory_type: str = DEFAULT_MEMORY_TYPE
+    ) -> MemoryEntry:
+        if memory_type not in MEMORY_TYPES:
+            memory_type = DEFAULT_MEMORY_TYPE
+        entry = MemoryEntry(content=content, category=category, memory_type=memory_type)
         self.db.add(entry)
         self.db.commit()
         self.db.refresh(entry)

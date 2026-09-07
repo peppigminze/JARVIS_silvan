@@ -1,12 +1,19 @@
 import { useCallback, useState } from "react";
-import type { MemoryEntry } from "../types";
-import { listMemory, saveMemory } from "../services/api";
+import type { MemoryEntry, MemoryType } from "../types";
+import { deleteMemory, listMemory, saveMemory } from "../services/api";
 import { usePolling } from "../hooks/usePolling";
+
+const TYPE_LABEL: Record<MemoryType, string> = {
+  fact: "Fakt",
+  preference: "Vorliebe",
+  project: "Projekt",
+};
 
 export function MemoryView() {
   const [entries, setEntries] = useState<MemoryEntry[]>([]);
   const [content, setContent] = useState("");
   const [category, setCategory] = useState("");
+  const [memoryType, setMemoryType] = useState<MemoryType>("fact");
   const [busy, setBusy] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -24,13 +31,18 @@ export function MemoryView() {
     if (!c || busy) return;
     setBusy(true);
     try {
-      const entry = await saveMemory(c, category.trim() || undefined);
+      const entry = await saveMemory(c, category.trim() || undefined, memoryType);
       setEntries((prev) => [entry, ...prev]);
       setContent("");
       setCategory("");
     } finally {
       setBusy(false);
     }
+  }
+
+  async function handleDelete(id: number) {
+    await deleteMemory(id);
+    setEntries((prev) => prev.filter((e) => e.id !== id));
   }
 
   return (
@@ -53,6 +65,15 @@ export function MemoryView() {
             onChange={(e) => setCategory(e.target.value)}
             style={{ width: 140 }}
           />
+          <select
+            className="select-input"
+            value={memoryType}
+            onChange={(e) => setMemoryType(e.target.value as MemoryType)}
+          >
+            <option value="fact">Fakt</option>
+            <option value="preference">Vorliebe</option>
+            <option value="project">Projekt</option>
+          </select>
           <button className="btn-primary" onClick={handleSave} disabled={busy || !content.trim()}>
             Speichern
           </button>
@@ -68,9 +89,15 @@ export function MemoryView() {
               <div className="card__body">
                 <p className="card__title">{m.content}</p>
                 <div className="card__meta">
+                  <span className="category-tag">{TYPE_LABEL[m.memory_type] ?? m.memory_type}</span>
                   {m.category && <span className="category-tag">{m.category}</span>}
                   <span>{new Date(m.updated_at).toLocaleDateString("de-CH")}</span>
                 </div>
+              </div>
+              <div className="card__actions">
+                <button className="icon-btn" onClick={() => handleDelete(m.id)}>
+                  Löschen
+                </button>
               </div>
             </div>
           ))}

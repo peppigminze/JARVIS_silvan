@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.database.db import Base
+from app.database.db import Base, ensure_columns
 
 
 def utcnow() -> datetime:
@@ -82,12 +82,33 @@ class Task(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+# Deliberately a plain string (not a SQLAlchemy Enum/CHECK constraint) so
+# a future addition to this list never requires a schema migration - see
+# app/memory/store.py for how it's used/validated.
+MEMORY_TYPES = ("fact", "preference", "project")
+DEFAULT_MEMORY_TYPE = "fact"
+
+
 class MemoryEntry(Base):
+    """Long-term memory (project spec section 10). Short-term/conversation
+    context is intentionally NOT stored here - it's just the recent
+    Message rows for the active conversation, already available without
+    a separate table. Only information JARVIS decides is durably
+    relevant (a fact, a stated preference, project knowledge) lands
+    here via the save_memory tool or the /api/memory endpoint.
+    """
+
     __tablename__ = "memory_entries"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     category: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    # One of MEMORY_TYPES. Added via an additive migration (see
+    # run_migrations() below) so existing memory_entries rows default
+    # to "fact" instead of the insert failing or data being lost.
+    memory_type: Mapped[str] = mapped_column(
+        String(32), nullable=False, default=DEFAULT_MEMORY_TYPE, server_default=DEFAULT_MEMORY_TYPE
+    )
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
@@ -176,3 +197,15 @@ class AgentHeartbeat(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     agent_name: Mapped[str] = mapped_column(String(64), unique=True, default="default")
     last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+def run_migrations() -> None:
+    """Additive, idempotent column migrations for tables that predate a
+    field (see ensure_columns() in app/database/db.py). Called from
+    init_db() after create_all(), so brand-new databases already have
+    every column via the model definitions and this is a no-op for them.
+    """
+    ensure_columns(
+        "memory_entries",
+        {"memory_type": f"VARCHAR(32) NOT NULL DEFAULT '{DEFAULT_MEMORY_TYPE}'"},
+    )

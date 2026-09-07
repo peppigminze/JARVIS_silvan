@@ -1,4 +1,4 @@
-import type { ChatMessage, MemoryEntry, PendingAction, SystemStatus, Task } from "../types";
+import type { ChatMessage, MemoryEntry, MemoryType, PendingAction, SystemStatus, Task } from "../types";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 const USER_TOKEN = import.meta.env.VITE_USER_TOKEN || "";
@@ -133,8 +133,19 @@ export async function listMemory(): Promise<MemoryEntry[]> {
   return request<MemoryEntry[]>("/api/memory");
 }
 
-export async function saveMemory(content: string, category?: string): Promise<MemoryEntry> {
-  return request<MemoryEntry>("/api/memory", { method: "POST", body: JSON.stringify({ content, category }) });
+export async function saveMemory(
+  content: string,
+  category?: string,
+  memory_type: MemoryType = "fact"
+): Promise<MemoryEntry> {
+  return request<MemoryEntry>("/api/memory", {
+    method: "POST",
+    body: JSON.stringify({ content, category, memory_type }),
+  });
+}
+
+export async function deleteMemory(id: number): Promise<void> {
+  await request<void>(`/api/memory/${id}`, { method: "DELETE" });
 }
 
 // ------------------------------------------------------------------ Pending actions (confirmation flow)

@@ -24,10 +24,13 @@ export interface Task {
   completed_at: string | null;
 }
 
+export type MemoryType = "fact" | "preference" | "project";
+
 export interface MemoryEntry {
   id: number;
   content: string;
   category: string | null;
+  memory_type: MemoryType;
   created_at: string;
   updated_at: string;
 }
