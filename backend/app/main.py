@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api import actions
 from app.api import agent as agent_api
 from app.api import health, memory, messages, sync, tasks
 from app.config import get_settings
@@ -44,6 +45,7 @@ app.include_router(tasks.router)
 app.include_router(memory.router)
 app.include_router(sync.router)
 app.include_router(agent_api.router)
+app.include_router(actions.router)
 
 
 @app.get("/")

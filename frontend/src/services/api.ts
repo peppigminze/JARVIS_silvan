@@ -1,4 +1,4 @@
-import type { ChatMessage, MemoryEntry, SystemStatus, Task } from "../types";
+import type { ChatMessage, MemoryEntry, PendingAction, SystemStatus, Task } from "../types";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 const USER_TOKEN = import.meta.env.VITE_USER_TOKEN || "";
@@ -135,6 +135,20 @@ export async function listMemory(): Promise<MemoryEntry[]> {
 
 export async function saveMemory(content: string, category?: string): Promise<MemoryEntry> {
   return request<MemoryEntry>("/api/memory", { method: "POST", body: JSON.stringify({ content, category }) });
+}
+
+// ------------------------------------------------------------------ Pending actions (confirmation flow)
+
+export async function listPendingActions(): Promise<PendingAction[]> {
+  return request<PendingAction[]>("/api/actions?status=awaiting_confirmation");
+}
+
+export async function confirmAction(id: number): Promise<PendingAction> {
+  return request<PendingAction>(`/api/actions/${id}/confirm`, { method: "POST" });
+}
+
+export async function rejectAction(id: number): Promise<PendingAction> {
+  return request<PendingAction>(`/api/actions/${id}/reject`, { method: "POST" });
 }
 
 // ------------------------------------------------------------------ Status

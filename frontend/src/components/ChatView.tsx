@@ -125,7 +125,7 @@ function MessageBubbles({ message }: { message: ChatMessage }) {
           <div className={`bubble ${message.status === "failed" ? "is-error" : ""}`}>
             {message.status === "failed"
               ? message.error || "Die Aktion konnte nicht ausgeführt werden."
-              : "..."}
+              : message.response || "..."}
           </div>
           <div className="bubble-meta">
             <span className={`pill status-${message.status}`}>{STATUS_LABEL[message.status]}</span>

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.database.models import MessageStatus, TaskPriority, TaskStatus
+from app.database.models import ActionStatus, MessageStatus, TaskPriority, TaskStatus
 
 # ---------------------------------------------------------------- Messages
 
@@ -79,6 +79,40 @@ class MemoryOut(BaseModel):
     category: Optional[str]
     created_at: datetime
     updated_at: datetime
+
+
+# ---------------------------------------------------------------- Pending actions (confirmation flow)
+
+
+class PendingActionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    message_id: Optional[int]
+    tool_name: str
+    arguments: dict
+    observations: list
+    status: ActionStatus
+    result: Optional[Any]
+    error: Optional[str]
+    created_at: datetime
+    resolved_at: Optional[datetime]
+
+
+class PendingActionCreate(BaseModel):
+    message_id: Optional[int] = None
+    tool_name: str = Field(min_length=1, max_length=128)
+    arguments: dict = Field(default_factory=dict)
+    observations: list = Field(default_factory=list)
+    reply: Optional[str] = None
+
+
+class ActionCompleteRequest(BaseModel):
+    result: Optional[Any] = None
+
+
+class ActionFailRequest(BaseModel):
+    error: str
 
 
 # ---------------------------------------------------------------- Sync

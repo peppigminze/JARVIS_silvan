@@ -20,8 +20,16 @@ from sqlalchemy.orm import Session
 
 from app.auth import require_agent
 from app.database.db import get_db
-from app.database.models import Message, MessageStatus
-from app.schemas import MessageOut, SyncCompleteRequest, SyncFailRequest
+from app.database.models import ActionStatus, Message, MessageStatus, PendingAction
+from app.schemas import (
+    ActionCompleteRequest,
+    ActionFailRequest,
+    MessageOut,
+    PendingActionCreate,
+    PendingActionOut,
+    SyncCompleteRequest,
+    SyncFailRequest,
+)
 
 router = APIRouter(prefix="/api/sync", tags=["sync"])
 
@@ -86,3 +94,99 @@ def fail_message(
     db.commit()
     db.refresh(message)
     return message
+
+
+# ---------------------------------------------------------------- Confirmed actions
+#
+# The confirmation flow (see api/actions.py + project spec section 14):
+#   agent pauses a pipeline on a CONFIRM_REQUIRED tool
+#       -> POST /api/sync/actions            (create, still processing the message)
+#   human confirms via the PWA               -> api/actions.py::confirm_action
+#   agent claims the confirmed action here    -> GET  /api/sync/confirmed-actions
+#   agent executes the tool locally, resumes the paused pipeline, then:
+#       -> POST /api/sync/actions/{id}/complete   (tool ran, pipeline may still continue)
+#       -> POST /api/sync/actions/{id}/fail       (tool execution raised)
+
+
+@router.post("/actions", response_model=PendingActionOut)
+def create_pending_action(
+    payload: PendingActionCreate,
+    db: Session = Depends(get_db),
+    _agent=Depends(require_agent),
+) -> PendingAction:
+    """Agent-side: persist a paused pipeline step awaiting human confirmation."""
+    action = PendingAction(message_id=payload.message_id, tool_name=payload.tool_name)
+    action.arguments = payload.arguments
+    action.observations = payload.observations
+    db.add(action)
+
+    if payload.message_id is not None:
+        message = db.get(Message, payload.message_id)
+        if message is not None:
+            # Stays 'processing' - the PWA cross-references /api/actions for
+            # the confirmation prompt (see project spec section 14/30).
+            message.response = payload.reply
+            message.status = MessageStatus.processing
+
+    db.commit()
+    db.refresh(action)
+    return action
+
+
+@router.get("/confirmed-actions", response_model=List[PendingActionOut])
+def get_confirmed_actions(
+    db: Session = Depends(get_db),
+    _agent=Depends(require_agent),
+    limit: int = 10,
+) -> list[PendingAction]:
+    """Atomically claim confirmed actions by flipping them to 'executing',
+    mirroring the locking used by GET /api/sync/pending."""
+    stmt = (
+        select(PendingAction)
+        .where(PendingAction.status == ActionStatus.confirmed)
+        .order_by(PendingAction.created_at.asc())
+        .limit(limit)
+    )
+    actions = list(db.execute(stmt).scalars().all())
+    for a in actions:
+        a.status = ActionStatus.executing
+    db.commit()
+    for a in actions:
+        db.refresh(a)
+    return actions
+
+
+@router.post("/actions/{action_id}/complete", response_model=PendingActionOut)
+def complete_action(
+    action_id: int,
+    payload: ActionCompleteRequest,
+    db: Session = Depends(get_db),
+    _agent=Depends(require_agent),
+) -> PendingAction:
+    action = db.get(PendingAction, action_id)
+    if action is None:
+        raise HTTPException(status_code=404, detail="Pending action not found.")
+    action.status = ActionStatus.completed
+    action.result = payload.result
+    action.resolved_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(action)
+    return action
+
+
+@router.post("/actions/{action_id}/fail", response_model=PendingActionOut)
+def fail_action(
+    action_id: int,
+    payload: ActionFailRequest,
+    db: Session = Depends(get_db),
+    _agent=Depends(require_agent),
+) -> PendingAction:
+    action = db.get(PendingAction, action_id)
+    if action is None:
+        raise HTTPException(status_code=404, detail="Pending action not found.")
+    action.status = ActionStatus.failed
+    action.error = payload.error
+    action.resolved_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(action)
+    return action

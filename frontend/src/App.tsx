@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import "./App.css";
 import { Sidebar, type View } from "./components/Sidebar";
 import { StatusBadge } from "./components/StatusBadge";
+import { ConfirmBar } from "./components/ConfirmBar";
 import { ChatView } from "./components/ChatView";
 import { TasksView } from "./components/TasksView";
 import { MemoryView } from "./components/MemoryView";
@@ -37,6 +38,7 @@ export default function App() {
           <span className="topbar__title">{TITLES[view]}</span>
           <StatusBadge status={status} />
         </header>
+        <ConfirmBar onResolved={refreshStatus} />
         <div className={`panel ${view === "chat" ? "panel--flush" : ""}`}>
           {view === "chat" && <ChatView />}
           {view === "tasks" && <TasksView />}

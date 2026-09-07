@@ -57,3 +57,56 @@ class BackendClient:
                 headers=self.headers,
             )
             resp.raise_for_status()
+
+    # -------------------------------------------------------- confirmation flow
+
+    async def create_pending_action(
+        self,
+        message_id: int | None,
+        tool_name: str,
+        arguments: dict,
+        observations: List[dict],
+        reply: str,
+    ) -> dict:
+        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+            resp = await client.post(
+                f"{self.base_url}/api/sync/actions",
+                json={
+                    "message_id": message_id,
+                    "tool_name": tool_name,
+                    "arguments": arguments,
+                    "observations": observations,
+                    "reply": reply,
+                },
+                headers=self.headers,
+            )
+            resp.raise_for_status()
+            return resp.json()
+
+    async def get_confirmed_actions(self, limit: int = 10) -> List[dict[str, Any]]:
+        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+            resp = await client.get(
+                f"{self.base_url}/api/sync/confirmed-actions",
+                params={"limit": limit},
+                headers=self.headers,
+            )
+            resp.raise_for_status()
+            return resp.json()
+
+    async def complete_action(self, action_id: int, result: Any = None) -> None:
+        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+            resp = await client.post(
+                f"{self.base_url}/api/sync/actions/{action_id}/complete",
+                json={"result": result},
+                headers=self.headers,
+            )
+            resp.raise_for_status()
+
+    async def fail_action(self, action_id: int, error: str) -> None:
+        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+            resp = await client.post(
+                f"{self.base_url}/api/sync/actions/{action_id}/fail",
+                json={"error": error},
+                headers=self.headers,
+            )
+            resp.raise_for_status()

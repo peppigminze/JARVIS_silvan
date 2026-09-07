@@ -2,69 +2,94 @@
 JARVIS Agent Core.
 
 Pipeline (see project spec section 7):
-    receive_message()
-    understand()
-    plan()
-    select_tools()
-    execute_tools()
-    generate_response()
-    save_memory()
+    understand -> plan -> select_tools -> execute_tools -> observe
+        -> (loop: additional tool calls if needed, bounded by
+            MAX_AGENT_STEPS so a confused model can never loop forever -
+            see project spec section 35)
+    -> generate_response -> save_memory
 
 V1 does not have real LLM function-calling for every local model, so
 tool selection uses a small JSON protocol: the model is asked to
-reply with a JSON object describing which tool (if any) to call, and
-a natural-language reply. This keeps JARVIS provider-agnostic and
-works with any local chat model, not just ones with native tool use.
+reply with a JSON object describing which tool (if any) to call, a
+"done" flag, and a natural-language reply. This keeps JARVIS
+provider-agnostic and works with any local chat model, not just ones
+with native tool use.
+
+Tool security (project spec section 14): if the model picks a
+CONFIRM_REQUIRED tool, the pipeline does NOT execute it. It returns a
+PipelineResult with done=False describing the pending tool call; the
+caller (agent/sync_worker.py) persists that as a PendingAction for a
+human to confirm/reject via the PWA, and later resumes the pipeline
+with the prior observations once approved.
 """
 from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Optional
+from dataclasses import dataclass, field
+from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
 from app.database.models import Message, MessageStatus
 from app.llm.base import ChatMessage, LLMProvider, LLMUnavailableError
 from app.memory.store import MemoryStore
-from app.tools.base import ToolResult
+from app.tools.base import Tool, ToolResult
 from app.tools.registry import ToolRegistry
 
 logger = logging.getLogger("jarvis.agent")
 
+# Hard cap on tool-call steps per user request. Prevents a confused
+# local model from looping forever (project spec section 35).
+MAX_AGENT_STEPS = 5
+
 
 SYSTEM_PROMPT_TEMPLATE = """You are JARVIS, a helpful local-first personal AI assistant.
 
-You can optionally use exactly one tool per message if it helps fulfil the
-user's request. Available tools:
+You solve the user's request step by step. On each step you may either
+call exactly one tool to gather information or perform an action, or
+finish and answer the user directly. You may call multiple tools across
+several steps if one isn't enough (e.g. look something up, then act on
+what you found).
 
+Available tools:
 {tool_list}
 
 Relevant memories about the user (may be empty):
 {memories}
 
+Observations from tools you already called for this request, most
+recent last (may be empty if this is your first step):
+{observations}
+
 Respond with ONLY a single JSON object, no other text, in this exact shape:
 {{
   "tool": "<tool_name or null>",
   "arguments": {{}},
-  "reply": "<short natural-language reply to the user>"
+  "done": <true if "reply" is your final answer to the user, false if you
+           are calling a tool and want to see its result before continuing>,
+  "reply": "<natural-language text: the final answer if done=true, otherwise
+             a short status update the user may briefly see>"
 }}
 
-If no tool is needed, set "tool" to null and just answer in "reply".
-Always fill "reply" - it is what the user will see if no tool result
-needs to be summarized afterwards.
+Call at most one tool per step. If no tool is needed, set "tool" to null
+and "done" to true. NEVER call the same tool with the same arguments
+twice - if the observations already show it succeeded, set "done" to
+true immediately instead of calling it again. As soon as the user's
+request is fulfilled, set "done" to true - do not keep calling tools
+"just in case".
 """
 
-FINAL_ANSWER_PROMPT_TEMPLATE = """You are JARVIS. You just executed the tool "{tool_name}" for the
-user's request: "{user_message}"
+FINAL_ANSWER_PROMPT_TEMPLATE = """You are JARVIS. The user asked: "{user_message}"
 
-Tool result (JSON): {tool_result}
+Here is what you did and found, as a JSON list of steps (each with the
+tool name, arguments, and either a result or an error):
+{observations}
 
 Write a short, natural, friendly final reply to the user summarizing what
-happened. Do not mention JSON or internal tool names explicitly. Reply with
-plain text only.
+happened. Do not mention JSON, internal tool names, or step numbers
+explicitly. If something failed, say so honestly instead of pretending it
+worked. Reply with plain text only.
 """
 
 
@@ -73,6 +98,27 @@ class PlanDecision:
     tool: Optional[str]
     arguments: dict
     reply: str
+    done: bool = True
+
+
+@dataclass
+class PipelineResult:
+    """Outcome of running (or resuming) the agent pipeline for one message.
+
+    done=True   -> `reply` is the final answer; the message is complete.
+    done=False  -> the pipeline paused on a CONFIRM_REQUIRED tool;
+                   `pending_tool`/`pending_arguments` describe it and
+                   `reply` is a short status update to show the user
+                   while they decide.
+    `observations` always reflects every tool call made so far in this
+    request, so the pipeline can be resumed exactly where it paused.
+    """
+
+    done: bool
+    reply: str
+    observations: List[dict] = field(default_factory=list)
+    pending_tool: Optional[str] = None
+    pending_arguments: Optional[dict] = None
 
 
 class JarvisAgent:
@@ -80,7 +126,7 @@ class JarvisAgent:
         self.llm = llm
         self.tools = tools
 
-    # ---------------------------------------------------------- 1. receive
+    # ---------------------------------------------------------- receive
 
     def receive_message(self, db: Session, content: str, client_id: str | None = None) -> Message:
         """Persist an incoming message as 'pending'. Idempotent on client_id."""
@@ -95,7 +141,7 @@ class JarvisAgent:
         db.refresh(message)
         return message
 
-    # ---------------------------------------------------------- 2. understand
+    # ---------------------------------------------------------- understand
 
     def understand(self, db: Session, content: str) -> dict:
         """Gather context: relevant memories for this message."""
@@ -103,16 +149,19 @@ class JarvisAgent:
         memories = store.search(content, limit=5)
         return {"memories": [m.content for m in memories]}
 
-    # ---------------------------------------------------------- 3. plan
+    # ---------------------------------------------------------- plan
 
-    async def plan(self, content: str, context: dict) -> PlanDecision:
+    async def plan(self, content: str, context: dict, observations: Optional[List[dict]] = None) -> PlanDecision:
         tool_list = "\n".join(
             f"- {t.name}: {t.description} (parameters: {json.dumps(t.parameters)})"
             for t in self.tools.list_tools()
         )
         memories = "\n".join(f"- {m}" for m in context.get("memories", [])) or "(none)"
+        observations_text = json.dumps(observations, default=str) if observations else "(none yet)"
 
-        system_prompt = SYSTEM_PROMPT_TEMPLATE.format(tool_list=tool_list, memories=memories)
+        system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
+            tool_list=tool_list, memories=memories, observations=observations_text
+        )
         messages: list[ChatMessage] = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": content},
@@ -134,16 +183,20 @@ class JarvisAgent:
             tool = data.get("tool") or None
             arguments = data.get("arguments") or {}
             reply = data.get("reply") or ""
-            return PlanDecision(tool=tool, arguments=arguments, reply=reply)
+            done = bool(data.get("done", True))
+            return PlanDecision(tool=tool, arguments=arguments, reply=reply, done=done)
         except (json.JSONDecodeError, AttributeError):
             # Model didn't follow the JSON protocol - fall back to treating
             # the whole output as a plain reply with no tool call.
             logger.warning("Could not parse plan JSON, falling back to plain reply.")
-            return PlanDecision(tool=None, arguments={}, reply=raw.strip())
+            return PlanDecision(tool=None, arguments={}, reply=raw.strip(), done=True)
 
-    # ---------------------------------------------------------- 4. select_tools
+    # ---------------------------------------------------------- select_tools
 
-    def select_tools(self, decision: PlanDecision):
+    def select_tools(self, decision: PlanDecision) -> Optional[Tool]:
+        """Returns the tool to execute, or None if there is nothing to
+        run automatically right now (no tool requested, unknown tool
+        name, or the tool requires human confirmation)."""
         if not decision.tool:
             return None
         tool = self.tools.get(decision.tool)
@@ -151,40 +204,46 @@ class JarvisAgent:
             logger.warning("Model requested unknown tool '%s'", decision.tool)
             return None
         if not self.tools.is_executable_automatically(decision.tool):
-            logger.info("Tool '%s' requires confirmation - skipping in V1.", decision.tool)
+            logger.info("Tool '%s' requires confirmation - pausing pipeline.", decision.tool)
             return None
         return tool
 
-    # ---------------------------------------------------------- 5. execute_tools
+    # ---------------------------------------------------------- execute_tools
 
-    async def execute_tools(self, db: Session, tool, arguments: dict) -> Optional[ToolResult]:
-        if tool is None:
-            return None
+    async def execute_tools(self, db: Session, tool: Tool, arguments: dict) -> ToolResult:
         try:
             return await tool.execute(db=db, **arguments)
         except TypeError as exc:
             logger.error("Tool '%s' called with bad arguments: %s", tool.name, exc)
             return ToolResult(success=False, error=f"Invalid arguments for tool '{tool.name}'.")
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
             logger.exception("Tool '%s' raised an unexpected error", tool.name)
             return ToolResult(success=False, error="Die Aktion konnte nicht ausgeführt werden.")
 
-    # ---------------------------------------------------------- 6. generate_response
-
-    async def generate_response(
-        self, content: str, decision: PlanDecision, tool_result: Optional[ToolResult]
-    ) -> str:
-        if tool_result is None:
-            return decision.reply or "..."
-
-        if not tool_result.success:
-            return f"Die Aktion konnte nicht ausgeführt werden: {tool_result.error}"
-
-        prompt = FINAL_ANSWER_PROMPT_TEMPLATE.format(
-            tool_name=decision.tool,
-            user_message=content,
-            tool_result=json.dumps(tool_result.data, default=str),
+    @staticmethod
+    def _already_succeeded(observations: List[dict], tool_name: str, arguments: dict) -> bool:
+        return any(
+            o.get("tool") == tool_name and o.get("arguments") == arguments and "result" in o
+            for o in observations
         )
+
+    @staticmethod
+    def build_observation(tool_name: str, arguments: dict, result: ToolResult) -> dict:
+        if result.success:
+            return {"tool": tool_name, "arguments": arguments, "result": result.data}
+        return {"tool": tool_name, "arguments": arguments, "error": result.error}
+
+    # ---------------------------------------------------------- generate_response
+
+    async def _summarize(self, content: str, observations: List[dict], truncated: bool = False) -> str:
+        prompt = FINAL_ANSWER_PROMPT_TEMPLATE.format(
+            user_message=content, observations=json.dumps(observations, default=str)
+        )
+        if truncated:
+            prompt += (
+                "\n\nHinweis: Das Schritt-Limit wurde erreicht, bevor alles abgeschlossen war. "
+                "Sag dem Nutzer ehrlich, was du bereits herausgefunden/getan hast und was noch offen ist."
+            )
         try:
             summary = await self.llm.chat(
                 [
@@ -195,11 +254,9 @@ class JarvisAgent:
             )
             return summary.strip()
         except LLMUnavailableError:
-            # Tool already succeeded - degrade gracefully to a plain summary
+            # Tool(s) already ran - degrade gracefully to a plain summary
             # instead of failing the whole message.
-            return f"Erledigt. Ergebnis: {json.dumps(tool_result.data, default=str)}"
-
-    # ---------------------------------------------------------- 7. save_memory
+            return f"Erledigt. Ergebnisse: {json.dumps(observations, default=str)}"
 
     def save_memory(self, db: Session, content: str, category: str | None = None) -> None:
         """Explicit helper for callers that want to persist a memory
@@ -207,55 +264,71 @@ class JarvisAgent:
         tool during planning)."""
         MemoryStore(db).save(content=content, category=category)
 
-    # ---------------------------------------------------------- pipeline (content-only)
+    # ---------------------------------------------------------- pipeline
 
-    async def run_pipeline(self, db: Session, content: str) -> str:
-        """Run understand -> plan -> select_tools -> execute_tools ->
-        generate_response for a piece of text and return the final reply.
+    async def run_pipeline(
+        self, db: Session, content: str, observations: Optional[List[dict]] = None
+    ) -> PipelineResult:
+        """Run (or resume) the understand -> plan -> act loop for a
+        message and return its outcome. Bounded by MAX_AGENT_STEPS,
+        counting steps already taken if resuming after a confirmation.
 
-        This is used by the local PC agent worker (agent/sync_worker.py),
-        which receives message *content* over HTTP from the sync backend
-        rather than owning a live Message ORM row itself. Raises
-        LLMUnavailableError if the local LLM cannot be reached.
+        Raises LLMUnavailableError if the local LLM cannot be reached.
         """
         context = self.understand(db, content)
-        decision = await self.plan(content, context)
-        tool = self.select_tools(decision)
-        tool_result = await self.execute_tools(db, tool, decision.arguments)
-        return await self.generate_response(content, decision, tool_result)
+        observations = list(observations or [])
+        steps_taken = len(observations)
 
-    # ---------------------------------------------------------- orchestration
+        while steps_taken < MAX_AGENT_STEPS:
+            decision = await self.plan(content, context, observations)
 
-    async def process(self, db: Session, message: Message) -> Message:
-        """Run the full pipeline for a single pending message and persist
-        the result. Never raises - all failure modes are captured on the
-        Message row as status='failed' with a human-readable error."""
+            if not decision.tool:
+                reply = await self._summarize(content, observations) if observations else (decision.reply or "...")
+                return PipelineResult(done=True, reply=reply, observations=observations)
 
-        message.status = MessageStatus.processing
-        db.commit()
+            tool = self.tools.get(decision.tool)
+            if tool is None:
+                observations.append(
+                    {
+                        "tool": decision.tool,
+                        "arguments": decision.arguments,
+                        "error": f"Unknown tool '{decision.tool}'.",
+                    }
+                )
+                steps_taken += 1
+                continue
 
-        try:
-            context = self.understand(db, message.content)
-            decision = await self.plan(message.content, context)
-            tool = self.select_tools(decision)
+            if self._already_succeeded(observations, decision.tool, decision.arguments):
+                # Small local models sometimes ignore "done" and repeat the
+                # exact same call. Re-running it would silently duplicate a
+                # side effect (e.g. creating the same task twice), so treat
+                # a repeat of an already-successful call as implicit "done"
+                # instead of executing it again.
+                logger.warning(
+                    "Model repeated an already-successful call to '%s' with identical "
+                    "arguments - stopping instead of re-executing it.",
+                    decision.tool,
+                )
+                reply = await self._summarize(content, observations)
+                return PipelineResult(done=True, reply=reply, observations=observations)
+
+            if not self.tools.is_executable_automatically(decision.tool):
+                return PipelineResult(
+                    done=False,
+                    reply=decision.reply or f"Ich möchte '{decision.tool}' ausführen. Bitte bestätige das kurz.",
+                    observations=observations,
+                    pending_tool=decision.tool,
+                    pending_arguments=decision.arguments,
+                )
+
             tool_result = await self.execute_tools(db, tool, decision.arguments)
-            final_reply = await self.generate_response(message.content, decision, tool_result)
+            observations.append(self.build_observation(decision.tool, decision.arguments, tool_result))
+            steps_taken += 1
 
-            message.response = final_reply
-            message.status = MessageStatus.completed
-            message.processed_at = datetime.now(timezone.utc)
-            message.error = None
-        except LLMUnavailableError as exc:
-            logger.error("LLM unavailable while processing message %s: %s", message.id, exc)
-            message.status = MessageStatus.failed
-            message.error = "Local LLM is unavailable."
-            message.processed_at = datetime.now(timezone.utc)
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("Unexpected error while processing message %s", message.id)
-            message.status = MessageStatus.failed
-            message.error = "Die Aktion konnte nicht ausgeführt werden."
-            message.processed_at = datetime.now(timezone.utc)
+            if decision.done:
+                reply = await self._summarize(content, observations)
+                return PipelineResult(done=True, reply=reply, observations=observations)
 
-        db.commit()
-        db.refresh(message)
-        return message
+        logger.warning("Agent exceeded MAX_AGENT_STEPS=%d for a single request.", MAX_AGENT_STEPS)
+        reply = await self._summarize(content, observations, truncated=True)
+        return PipelineResult(done=True, reply=reply, observations=observations)

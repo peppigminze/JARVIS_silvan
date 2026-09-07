@@ -39,3 +39,18 @@ export interface SystemStatus {
   llm_provider: string;
   llm_available: boolean | null;
 }
+
+export type ActionStatus = "awaiting_confirmation" | "confirmed" | "rejected" | "executing" | "completed" | "failed";
+
+export interface PendingAction {
+  id: number;
+  message_id: number | null;
+  tool_name: string;
+  arguments: Record<string, unknown>;
+  observations: unknown[];
+  status: ActionStatus;
+  result: unknown;
+  error: string | null;
+  created_at: string;
+  resolved_at: string | null;
+}
