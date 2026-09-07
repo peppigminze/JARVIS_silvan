@@ -1,0 +1,63 @@
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+# Make sure "app" is importable when pytest is run from backend/
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+os.environ.setdefault("USER_TOKEN", "test-user-token")
+os.environ.setdefault("AGENT_TOKEN", "test-agent-token")
+os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
+
+from app.database import db as db_module  # noqa: E402
+from app.database.db import Base  # noqa: E402
+from app.main import app  # noqa: E402
+
+USER_TOKEN = os.environ["USER_TOKEN"]
+AGENT_TOKEN = os.environ["AGENT_TOKEN"]
+
+
+@pytest.fixture()
+def test_engine():
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=__import__("sqlalchemy.pool", fromlist=["StaticPool"]).StaticPool,
+    )
+    Base.metadata.create_all(bind=engine)
+    yield engine
+    Base.metadata.drop_all(bind=engine)
+
+
+@pytest.fixture()
+def client(test_engine):
+    TestingSessionLocal = sessionmaker(bind=test_engine, autoflush=False, autocommit=False)
+
+    def override_get_db():
+        session = TestingSessionLocal()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    app.dependency_overrides[db_module.get_db] = override_get_db
+    with TestClient(app) as c:
+        yield c
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture()
+def user_headers():
+    return {"Authorization": f"Bearer {USER_TOKEN}"}
+
+
+@pytest.fixture()
+def agent_headers():
+    return {"Authorization": f"Bearer {AGENT_TOKEN}"}
