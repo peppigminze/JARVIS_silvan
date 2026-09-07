@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -11,6 +12,7 @@ from app.api import agent as agent_api
 from app.api import health, memory, messages, sync, tasks
 from app.config import get_settings
 from app.database.db import init_db
+from app.scheduler import run_forever as run_scheduler_forever
 
 logging.basicConfig(
     level=logging.INFO,
@@ -26,7 +28,9 @@ async def lifespan(app: FastAPI):
     logger.info("JARVIS backend starting (env=%s)", settings.APP_ENV)
     init_db()
     logger.info("Database ready.")
+    scheduler_task = asyncio.create_task(run_scheduler_forever())
     yield
+    scheduler_task.cancel()
 
 
 app = FastAPI(title="JARVIS Backend", version="0.1.0", lifespan=lifespan)

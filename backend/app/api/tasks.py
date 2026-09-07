@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -27,6 +27,22 @@ def list_tasks(
     return list(db.execute(stmt).scalars().all())
 
 
+@router.get("/due-reminders", response_model=List[TaskOut])
+def due_reminders(
+    db: Session = Depends(get_db),
+    _user=Depends(require_user),
+    within_seconds: int = 90,
+) -> list[Task]:
+    """Reminders the scheduler (app/scheduler.py) fired recently, i.e.
+    last_notified_at is within the last `within_seconds`. The PWA polls
+    this to show a notification (project spec section 31); the window
+    just needs to comfortably exceed the scheduler's own poll interval
+    so a client polling every few seconds never misses one."""
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=within_seconds)
+    stmt = select(Task).where(Task.last_notified_at.is_not(None), Task.last_notified_at >= cutoff)
+    return list(db.execute(stmt).scalars().all())
+
+
 @router.post("", response_model=TaskOut)
 def create_task(
     payload: TaskCreate, db: Session = Depends(get_db), _user=Depends(require_user)
@@ -34,9 +50,13 @@ def create_task(
     task = Task(
         title=payload.title,
         description=payload.description,
+        notes=payload.notes,
         priority=payload.priority,
         due_at=payload.due_at,
+        reminder_enabled=payload.reminder_enabled and payload.due_at is not None,
+        recurrence=payload.recurrence if payload.due_at is not None else "none",
     )
+    task.tags = payload.tags
     db.add(task)
     db.commit()
     db.refresh(task)

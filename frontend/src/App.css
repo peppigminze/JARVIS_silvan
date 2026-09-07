@@ -489,6 +489,15 @@
   cursor: not-allowed;
 }
 
+.reminder-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-dim);
+  padding: 0 4px;
+}
+
 .card-list {
   display: flex;
   flex-direction: column;

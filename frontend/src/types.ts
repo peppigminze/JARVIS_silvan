@@ -13,13 +13,20 @@ export interface ChatMessage {
   processed_at: string | null;
 }
 
+export type Recurrence = "none" | "daily" | "weekly" | "monthly";
+
 export interface Task {
   id: number;
   title: string;
   description: string | null;
+  notes: string | null;
+  tags: string[];
   status: TaskStatus;
   priority: TaskPriority;
   due_at: string | null;
+  reminder_enabled: boolean;
+  recurrence: Recurrence;
+  last_notified_at: string | null;
   created_at: string;
   completed_at: string | null;
 }

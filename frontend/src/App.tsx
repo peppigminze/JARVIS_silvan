@@ -8,6 +8,7 @@ import { TasksView } from "./components/TasksView";
 import { MemoryView } from "./components/MemoryView";
 import { getStatus } from "./services/api";
 import { usePolling } from "./hooks/usePolling";
+import { useReminderNotifications } from "./hooks/useReminderNotifications";
 import type { SystemStatus } from "./types";
 
 const TITLES: Record<View, string> = {
@@ -29,6 +30,7 @@ export default function App() {
   }, []);
 
   usePolling(refreshStatus, 10000, []);
+  useReminderNotifications();
 
   return (
     <div className="shell">

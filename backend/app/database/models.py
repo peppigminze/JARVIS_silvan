@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import enum
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.db import Base, ensure_columns
@@ -20,6 +20,17 @@ from app.database.db import Base, ensure_columns
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def parse_due_at(value: str) -> datetime:
+    """Parse an ISO-8601 datetime string, assuming UTC if no offset was
+    given. Without this, a naive datetime (e.g. because the LLM omitted
+    a timezone) would later crash the reminder scheduler when compared
+    against the timezone-aware `datetime.now(timezone.utc)`."""
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
 
 
 class MessageStatus(str, enum.Enum):
@@ -64,6 +75,13 @@ class Message(Base):
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+# Plain strings (not a SQLAlchemy Enum/CHECK constraint), same reasoning
+# as MEMORY_TYPES above: extending the list later must never require a
+# schema migration.
+RECURRENCE_VALUES = ("none", "daily", "weekly", "monthly")
+DEFAULT_RECURRENCE = "none"
+
+
 class Task(Base):
     __tablename__ = "tasks"
 
@@ -78,8 +96,60 @@ class Task(Base):
     )
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # Reminders/notes/tags (project spec sections 11/12). Added via an
+    # additive migration (run_migrations() below), so existing tasks
+    # rows get sane defaults instead of the insert/select failing.
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    tags_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]", server_default="[]")
+    reminder_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
+    # One of RECURRENCE_VALUES. "none" = fires once, like a one-off
+    # reminder; anything else re-schedules due_at forward after firing
+    # instead of the reminder disappearing (project spec section 12).
+    recurrence: Mapped[str] = mapped_column(
+        String(16), nullable=False, default=DEFAULT_RECURRENCE, server_default=DEFAULT_RECURRENCE
+    )
+    # Set by the reminder scheduler (app/scheduler.py) the moment a due
+    # reminder fires, so a restart after downtime ("PC startet -> Scheduler
+    # synchronisiert -> verpasste Reminder werden korrekt behandelt", spec
+    # section 12) never re-fires - or loses - the same occurrence twice.
+    last_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    @property
+    def tags(self) -> list[str]:
+        return json.loads(self.tags_json or "[]")
+
+    @tags.setter
+    def tags(self, value: list[str] | None) -> None:
+        self.tags_json = json.dumps(value or [])
+
+
+def advance_due_date(due_at: datetime, recurrence: str) -> datetime:
+    """Next occurrence of a recurring reminder after it fires.
+
+    No dateutil dependency in this project, so month arithmetic is done
+    by hand: same day-of-month next month, clamped to that month's
+    actual length (so a reminder due Jan 31 becomes Feb 28/29, not an
+    invalid date or a silent skip to March).
+    """
+    if recurrence == "daily":
+        return due_at + timedelta(days=1)
+    if recurrence == "weekly":
+        return due_at + timedelta(days=7)
+    if recurrence == "monthly":
+        year = due_at.year + (due_at.month // 12)
+        month = due_at.month % 12 + 1
+        # Length of the target month, without pulling in the `calendar` module.
+        if month == 12:
+            days_in_month = 31
+        else:
+            next_month_first = datetime(year + (month // 12), month % 12 + 1, 1)
+            days_in_month = (next_month_first - datetime(year, month, 1)).days
+        day = min(due_at.day, days_in_month)
+        return due_at.replace(year=year, month=month, day=day)
+    raise ValueError(f"Unknown recurrence '{recurrence}'.")
 
 
 # Deliberately a plain string (not a SQLAlchemy Enum/CHECK constraint) so
@@ -208,4 +278,14 @@ def run_migrations() -> None:
     ensure_columns(
         "memory_entries",
         {"memory_type": f"VARCHAR(32) NOT NULL DEFAULT '{DEFAULT_MEMORY_TYPE}'"},
+    )
+    ensure_columns(
+        "tasks",
+        {
+            "notes": "TEXT",
+            "tags_json": "TEXT NOT NULL DEFAULT '[]'",
+            "reminder_enabled": "INTEGER NOT NULL DEFAULT 0",
+            "recurrence": f"VARCHAR(16) NOT NULL DEFAULT '{DEFAULT_RECURRENCE}'",
+            "last_notified_at": "DATETIME",
+        },
     )

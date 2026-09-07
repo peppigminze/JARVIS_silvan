@@ -6,35 +6,71 @@ from typing import Any, Dict
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.database.models import Task, TaskPriority, TaskStatus, utcnow
+from app.database.models import (
+    RECURRENCE_VALUES,
+    Task,
+    TaskPriority,
+    TaskStatus,
+    parse_due_at,
+    utcnow,
+)
 from app.tools.base import Tool, ToolResult, ToolSecurity
 
 
 class CreateTaskTool(Tool):
     name = "create_task"
-    description = "Create a new task/todo item, optionally with a due date and priority."
+    description = (
+        "Create a new task/todo item, optionally with a due date, priority, notes, "
+        "and tags. Set due_at plus reminder=true to make this a reminder JARVIS will "
+        "notify the user about when it comes due. Use recurrence for repeating "
+        "reminders like 'every Friday' (weekly) or 'every day' (daily). Always "
+        "compute due_at as an absolute ISO-8601 datetime relative to the current "
+        "time given in the conversation context - never leave a relative phrase "
+        "like 'tomorrow' unresolved."
+    )
     parameters = {
         "type": "object",
         "properties": {
             "title": {"type": "string"},
             "description": {"type": "string"},
+            "notes": {"type": "string"},
+            "tags": {"type": "array", "items": {"type": "string"}},
             "priority": {"type": "string", "enum": ["low", "medium", "high"]},
             "due_at": {"type": "string", "format": "date-time"},
+            "reminder": {"type": "boolean", "description": "Notify the user when due_at is reached."},
+            "recurrence": {"type": "string", "enum": list(RECURRENCE_VALUES)},
         },
         "required": ["title"],
     }
     security = ToolSecurity.SAFE
 
-    async def execute(self, db: Session, title: str, description: str | None = None,
-                       priority: str = "medium", due_at: str | None = None, **_) -> ToolResult:
+    async def execute(
+        self,
+        db: Session,
+        title: str,
+        description: str | None = None,
+        notes: str | None = None,
+        tags: list[str] | None = None,
+        priority: str = "medium",
+        due_at: str | None = None,
+        reminder: bool = False,
+        recurrence: str = "none",
+        **_,
+    ) -> ToolResult:
         try:
-            due_dt = datetime.fromisoformat(due_at) if due_at else None
+            due_dt = parse_due_at(due_at) if due_at else None
+            if recurrence not in RECURRENCE_VALUES:
+                recurrence = "none"
             task = Task(
                 title=title,
                 description=description,
+                notes=notes,
                 priority=TaskPriority(priority) if priority else TaskPriority.medium,
                 due_at=due_dt,
+                reminder_enabled=bool(reminder and due_dt is not None),
+                recurrence=recurrence if due_dt is not None else "none",
             )
+            task.tags = tags or []
             db.add(task)
             db.commit()
             db.refresh(task)
@@ -65,6 +101,9 @@ class ListTasksTool(Tool):
                 "status": t.status.value,
                 "priority": t.priority.value,
                 "due_at": t.due_at.isoformat() if t.due_at else None,
+                "reminder": t.reminder_enabled,
+                "recurrence": t.recurrence,
+                "tags": t.tags,
             }
             for t in tasks
         ]

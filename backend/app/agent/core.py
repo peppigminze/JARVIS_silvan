@@ -27,6 +27,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from sqlalchemy.orm import Session
@@ -45,6 +46,12 @@ MAX_AGENT_STEPS = 5
 
 
 SYSTEM_PROMPT_TEMPLATE = """You are JARVIS, a helpful local-first personal AI assistant.
+
+The current date and time is: {now_iso} (UTC). When a tool needs an
+absolute date/time (e.g. due_at) and the user gave a relative one
+("tomorrow", "in 30 minutes", "next Friday at 5pm"), compute the
+correct absolute ISO-8601 UTC datetime yourself using this reference -
+never pass the relative phrase through unresolved.
 
 You solve the user's request step by step. On each step you may either
 call exactly one tool to gather information or perform an action, or
@@ -159,8 +166,9 @@ class JarvisAgent:
         memories = "\n".join(f"- {m}" for m in context.get("memories", [])) or "(none)"
         observations_text = json.dumps(observations, default=str) if observations else "(none yet)"
 
+        now_iso = datetime.now(timezone.utc).isoformat()
         system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
-            tool_list=tool_list, memories=memories, observations=observations_text
+            tool_list=tool_list, memories=memories, observations=observations_text, now_iso=now_iso
         )
         messages: list[ChatMessage] = [
             {"role": "system", "content": system_prompt},

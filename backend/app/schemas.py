@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.database.models import (
+    DEFAULT_RECURRENCE,
     MEMORY_TYPES,
+    RECURRENCE_VALUES,
     ActionStatus,
     DEFAULT_MEMORY_TYPE,
     MessageStatus,
@@ -42,19 +44,42 @@ class MessageOut(BaseModel):
 # ---------------------------------------------------------------- Tasks
 
 
+def _valid_recurrence(v: str) -> str:
+    if v not in RECURRENCE_VALUES:
+        raise ValueError(f"recurrence must be one of {RECURRENCE_VALUES}")
+    return v
+
+
 class TaskCreate(BaseModel):
     title: str = Field(min_length=1, max_length=255)
     description: Optional[str] = None
+    notes: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
     priority: TaskPriority = TaskPriority.medium
     due_at: Optional[datetime] = None
+    reminder_enabled: bool = False
+    recurrence: str = DEFAULT_RECURRENCE
+
+    _check_recurrence = field_validator("recurrence")(_valid_recurrence)
 
 
 class TaskUpdate(BaseModel):
     title: Optional[str] = Field(default=None, min_length=1, max_length=255)
     description: Optional[str] = None
+    notes: Optional[str] = None
+    tags: Optional[List[str]] = None
     status: Optional[TaskStatus] = None
     priority: Optional[TaskPriority] = None
     due_at: Optional[datetime] = None
+    reminder_enabled: Optional[bool] = None
+    recurrence: Optional[str] = None
+
+    @field_validator("recurrence")
+    @classmethod
+    def _check_recurrence_optional(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in RECURRENCE_VALUES:
+            raise ValueError(f"recurrence must be one of {RECURRENCE_VALUES}")
+        return v
 
 
 class TaskOut(BaseModel):
@@ -63,9 +88,14 @@ class TaskOut(BaseModel):
     id: int
     title: str
     description: Optional[str]
+    notes: Optional[str]
+    tags: List[str]
     status: TaskStatus
     priority: TaskPriority
     due_at: Optional[datetime]
+    reminder_enabled: bool
+    recurrence: str
+    last_notified_at: Optional[datetime]
     created_at: datetime
     completed_at: Optional[datetime]
 

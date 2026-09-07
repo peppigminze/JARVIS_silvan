@@ -112,8 +112,18 @@ export async function listTasks(): Promise<Task[]> {
   return request<Task[]>("/api/tasks");
 }
 
-export async function createTask(title: string, priority: Task["priority"] = "medium"): Promise<Task> {
-  return request<Task>("/api/tasks", { method: "POST", body: JSON.stringify({ title, priority }) });
+export interface CreateTaskInput {
+  title: string;
+  priority?: Task["priority"];
+  due_at?: string;
+  reminder_enabled?: boolean;
+  recurrence?: Task["recurrence"];
+  tags?: string[];
+  notes?: string;
+}
+
+export async function createTask(input: CreateTaskInput): Promise<Task> {
+  return request<Task>("/api/tasks", { method: "POST", body: JSON.stringify(input) });
 }
 
 export async function completeTask(id: number): Promise<Task> {
@@ -125,6 +135,10 @@ export async function completeTask(id: number): Promise<Task> {
 
 export async function deleteTask(id: number): Promise<void> {
   await request<void>(`/api/tasks/${id}`, { method: "DELETE" });
+}
+
+export async function getDueReminders(): Promise<Task[]> {
+  return request<Task[]>("/api/tasks/due-reminders");
 }
 
 // ------------------------------------------------------------------ Memory
