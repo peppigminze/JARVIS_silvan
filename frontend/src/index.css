@@ -1,32 +1,42 @@
 /* ==========================================================================
-   JARVIS design tokens
-   Dark, low-noise instrument-panel aesthetic. One accent (cyan) does the
-   signalling work; everything else stays quiet so status colors (amber /
-   green / red) read unambiguously against it.
+   JARVIS design tokens — futuristic HUD aesthetic.
+   Deep-space background, one electric-cyan signal color doing almost all
+   the work (glowing borders, active states, the voice orb), a warm amber
+   as the sparing secondary accent for anything that needs a second voice
+   (priority, warnings), and a monospace face for anything that reads like
+   telemetry (status pills, timestamps, badges) vs. the display face for
+   anything a human is meant to read as prose.
    ========================================================================== */
 
 :root {
-  --bg: #05070d;
-  --surface: #0c1120;
-  --surface-2: #121a2e;
-  --surface-3: #1a2440;
-  --border: #1f2a45;
-  --border-soft: #161f36;
+  --bg: #04060c;
+  --surface: #0a0f1e;
+  --surface-2: #0f1830;
+  --surface-3: #17224a;
+  --border: #223260;
+  --border-soft: #16213f;
+  --border-glow: rgba(56, 224, 255, 0.35);
 
-  --text: #e9edf9;
-  --text-dim: #8d97b8;
-  --text-faint: #5b6485;
+  --text: #eaf2ff;
+  --text-dim: #93a3c9;
+  --text-faint: #576089;
 
-  --accent: #45d6ff;
-  --accent-dim: #2a7d99;
-  --accent-soft: rgba(69, 214, 255, 0.12);
+  --accent: #38e0ff;
+  --accent-2: #7c5cff;
+  --accent-dim: #2790a8;
+  --accent-soft: rgba(56, 224, 255, 0.12);
+  --accent-glow: rgba(56, 224, 255, 0.55);
 
-  --success: #3ddc97;
-  --warning: #f5b84e;
-  --danger: #ff6b6b;
+  --amber: #ffb454;
+  --amber-soft: rgba(255, 180, 84, 0.14);
+
+  --success: #34e0a1;
+  --warning: #ffb454;
+  --danger: #ff5470;
 
   --font-display: "Space Grotesk", "Inter", sans-serif;
   --font-body: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: "Share Tech Mono", "SFMono-Regular", Consolas, monospace;
 
   --radius-sm: 8px;
   --radius-md: 12px;
@@ -49,8 +59,15 @@ body {
   margin: 0;
   background: var(--bg);
   background-image:
-    radial-gradient(circle at 12% 8%, rgba(69, 214, 255, 0.05), transparent 40%),
-    radial-gradient(circle at 88% 92%, rgba(69, 214, 255, 0.035), transparent 45%);
+    radial-gradient(ellipse 900px 600px at 10% -10%, rgba(56, 224, 255, 0.09), transparent 55%),
+    radial-gradient(ellipse 700px 500px at 100% 100%, rgba(124, 92, 255, 0.07), transparent 50%),
+    repeating-linear-gradient(
+      0deg,
+      rgba(255, 255, 255, 0.012) 0px,
+      rgba(255, 255, 255, 0.012) 1px,
+      transparent 1px,
+      transparent 3px
+    );
   color: var(--text);
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
@@ -58,6 +75,12 @@ body {
 
 button {
   font-family: inherit;
+}
+
+code,
+.mono {
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
 }
 
 ::selection {
@@ -82,6 +105,36 @@ button {
 *::-webkit-scrollbar-thumb {
   background: var(--surface-3);
   border-radius: 8px;
+}
+
+/* Reusable glow utilities - a glowing 1px border plus a soft outer bloom,
+   the visual signature this redesign leans on everywhere (panels, the
+   active nav item, the voice orb, primary buttons). */
+.hud-glow-border {
+  border: 1px solid var(--border-glow);
+  box-shadow: 0 0 0 1px rgba(56, 224, 255, 0.08), 0 0 18px -4px var(--accent-glow);
+}
+
+@keyframes hud-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@keyframes hud-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes hud-spin-reverse {
+  to {
+    transform: rotate(-360deg);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

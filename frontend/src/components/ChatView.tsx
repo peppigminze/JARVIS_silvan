@@ -2,6 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChatMessage, ToolObservation } from "../types";
 import { flushOfflineQueue, listMessages, sendMessage } from "../services/api";
 import { usePolling } from "../hooks/usePolling";
+import { useVoiceInput } from "../hooks/useVoiceInput";
+import { useSpeechOutput } from "../hooks/useSpeechOutput";
+import { VoiceOrb } from "./VoiceOrb";
+
+const AUTOSPEAK_KEY = "jarvis.autospeak.v1";
 
 interface LocalQueued {
   client_id: string;
@@ -70,24 +75,75 @@ export function ChatView() {
   const [queued, setQueued] = useState<LocalQueued[]>([]);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [autoSpeak, setAutoSpeak] = useState(() => {
+    try {
+      return localStorage.getItem(AUTOSPEAK_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
   const scrollRef = useRef<HTMLDivElement>(null);
+  const spokenRef = useRef<Set<number>>(new Set());
+
+  const voice = useVoiceInput();
+  const speech = useSpeechOutput();
 
   const refresh = useCallback(async () => {
     try {
       const msgs = await listMessages();
       setMessages(msgs);
       setQueued((prev) => prev.filter((q) => !msgs.some((m) => m.client_id === q.client_id)));
+
+      if (autoSpeak) {
+        for (const m of msgs) {
+          if (m.status === "completed" && m.response && !spokenRef.current.has(m.id)) {
+            spokenRef.current.add(m.id);
+            speech.speak(m.response);
+          }
+        }
+      }
     } catch {
       // Backend unreachable - the chat simply shows what it already has.
     }
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoSpeak]);
 
-  usePolling(refresh, 3000, []);
+  usePolling(refresh, 3000, [autoSpeak]);
   usePolling(flushOfflineQueue, 5000, []);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, queued]);
+
+  function toggleAutoSpeak() {
+    setAutoSpeak((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(AUTOSPEAK_KEY, next ? "1" : "0");
+      } catch {
+        // ignore - localStorage unavailable (private browsing etc.)
+      }
+      if (next) {
+        // Mark everything already on screen as "spoken" so turning this
+        // on doesn't read the entire visible chat history out loud -
+        // only messages that complete *after* this point are spoken.
+        for (const m of messages) spokenRef.current.add(m.id);
+      } else {
+        speech.stop();
+      }
+      return next;
+    });
+  }
+
+  function handleMicClick() {
+    if (voice.isListening) {
+      voice.stop();
+      return;
+    }
+    voice.start((finalText) => {
+      setDraft((prev) => (prev ? `${prev} ${finalText}` : finalText));
+    });
+  }
 
   async function handleSend() {
     const content = draft.trim();
@@ -139,15 +195,35 @@ export function ChatView() {
         ))}
       </div>
 
+      {voice.error && <div className="chat__voice-error">{voice.error}</div>}
+
       <div className="chat__composer">
+        {voice.isSupported && (
+          <VoiceOrb
+            state={voice.isListening ? "listening" : speech.isSpeaking ? "speaking" : "idle"}
+            onClick={handleMicClick}
+            size={44}
+            title={voice.isListening ? "Aufnahme stoppen" : "Spracheingabe starten"}
+          />
+        )}
         <textarea
           className="chat__input"
-          placeholder="Nachricht an JARVIS..."
+          placeholder={voice.isListening ? voice.interimTranscript || "Ich höre zu..." : "Nachricht an JARVIS..."}
           rows={1}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={handleKeyDown}
         />
+        {speech.isSupported && (
+          <button
+            type="button"
+            className={`icon-btn chat__speak-toggle ${autoSpeak ? "is-active" : ""}`}
+            onClick={toggleAutoSpeak}
+            title={autoSpeak ? "Vorlesen deaktivieren" : "Antworten vorlesen"}
+          >
+            {autoSpeak ? "🔊" : "🔇"}
+          </button>
+        )}
         <button className="chat__send" onClick={handleSend} disabled={sending || !draft.trim()}>
           Senden
         </button>

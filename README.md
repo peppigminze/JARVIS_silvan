@@ -570,3 +570,43 @@ f-string (SQLite unterstützt keine parametrisierten Identifier für
 DDL). Das ist nur sicher, weil ausschließlich mit statischen,
 hartkodierten Werten aus `run_migrations()` aufgerufen - im Code
 explizit als Warnung dokumentiert, falls das mal geändert wird.
+
+## 21. Voice Interface (Sprachein-/ausgabe)
+
+Projektauftrag Abschnitt 25 verlangt Sprachsteuerung, aber **kein
+dauerhaftes Mikrofon-Listening ohne explizite Aktivierung** und
+optionale Nutzung. Umgesetzt über die **Web Speech API** des Browsers
+(`SpeechRecognition`/`webkitSpeechRecognition` für STT,
+`SpeechSynthesis` für TTS) - bewusst statt einer lokalen Whisper- oder
+pyttsx3-Pipeline, um keine weiteren schweren Abhängigkeiten
+einzuführen.
+
+- **Push-to-Talk, kein Dauer-Listening:** Das Mikrofon-Symbol
+  (`VoiceOrb`, `frontend/src/components/VoiceOrb.tsx`) startet/stoppt
+  eine einzelne Aufnahme-Session (`useVoiceInput`,
+  `frontend/src/hooks/useVoiceInput.ts`). Es wird nie automatisch oder
+  im Hintergrund zugehört - erfüllt damit explizit die Vorgabe aus
+  Abschnitt 25.
+- **Auto-Vorlesen ist optional und aus per Default:** Der
+  Lautsprecher-Toggle in der Chat-Ansicht (`useSpeechOutput`,
+  `frontend/src/hooks/useSpeechOutput.ts`) liest neu abgeschlossene
+  JARVIS-Antworten automatisch vor, sobald aktiviert; Zustand wird in
+  `localStorage` gemerkt. Beim Aktivieren werden bereits sichtbare
+  Nachrichten nicht nachträglich vorgelesen - nur alles, was danach
+  fertig wird.
+- **Ehrliche Grenze:** Spracherkennung und -synthese laufen komplett im
+  Browser des jeweiligen Herstellers (Chrome/Edge unterstützen
+  `SpeechRecognition` gut, Firefox/Safari nicht oder nur
+  eingeschränkt). Das ist **nicht** Teil der eigenen lokalen
+  JARVIS-Pipeline, sondern wird von Google/Microsoft-Servern
+  verarbeitet, sobald STT genutzt wird - anders als der Rest von
+  JARVIS (Ollama läuft lokal). Wer das nicht will, nutzt einfach die
+  Texteingabe; beide UI-Elemente blenden sich automatisch aus, wenn der
+  Browser die jeweilige API nicht unterstützt (`voice.isSupported` /
+  `speech.isSupported`).
+- **Secure Context nötig:** Die Web Speech API verlangt `https://` oder
+  `localhost` - über einfaches HTTP im lokalen Netzwerk (z. B. IP der
+  PWA von einem anderen Gerät) funktioniert das Mikrofon nicht.
+- Mikrofon-Fehler (Zugriff verweigert, keine Sprache erkannt) werden
+  als lesbare deutsche Meldung direkt über dem Chat-Eingabefeld
+  angezeigt, nicht als rohe Browser-Fehlermeldung.
