@@ -39,6 +39,7 @@ class MessageOut(BaseModel):
     error: Optional[str]
     retry_count: int
     processed_by: Optional[str]
+    observations: list
     created_at: datetime
     processed_at: Optional[datetime]
 
@@ -170,6 +171,7 @@ class SyncCompleteRequest(BaseModel):
     message_id: int
     response: str
     processed_by: Optional[str] = None
+    observations: list = Field(default_factory=list)
 
 
 class SyncFailRequest(BaseModel):

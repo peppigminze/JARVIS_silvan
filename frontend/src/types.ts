@@ -4,6 +4,13 @@ export type TaskPriority = "low" | "medium" | "high";
 
 export type ProcessedBy = "local" | "cloud" | null;
 
+export interface ToolObservation {
+  tool: string;
+  arguments: Record<string, unknown>;
+  result?: unknown;
+  error?: string;
+}
+
 export interface ChatMessage {
   id: number;
   client_id: string | null;
@@ -13,6 +20,7 @@ export interface ChatMessage {
   error: string | null;
   retry_count: number;
   processed_by: ProcessedBy;
+  observations: ToolObservation[];
   created_at: string;
   processed_at: string | null;
 }

@@ -17,6 +17,7 @@ function makeMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
     error: null,
     retry_count: 0,
     processed_by: "local",
+    observations: [],
     created_at: new Date().toISOString(),
     processed_at: new Date().toISOString(),
     ...overrides,
@@ -55,6 +56,29 @@ describe("ChatView", () => {
     vi.mocked(api.listMessages).mockResolvedValue([makeMessage({ processed_by: "cloud" })]);
     render(<ChatView />);
     expect(await screen.findByText("☁️ Cloud")).toBeInTheDocument();
+  });
+
+  it("shows short tool-activity lines for a message that used tools", async () => {
+    vi.mocked(api.listMessages).mockResolvedValue([
+      makeMessage({
+        observations: [
+          { tool: "create_task", arguments: { title: "Test" }, result: { id: 1 } },
+          { tool: "run_command", arguments: { command: "git status" }, error: "timed out" },
+        ],
+      }),
+    ]);
+    render(<ChatView />);
+    expect(await screen.findByText(/Aufgabe erstellt/)).toBeInTheDocument();
+    expect(await screen.findByText(/Befehl ausgeführt/)).toBeInTheDocument();
+    expect(screen.getByText("✓")).toBeInTheDocument();
+    expect(screen.getByText("✗")).toBeInTheDocument();
+  });
+
+  it("does not render a tool-activity block when no tools were used", async () => {
+    vi.mocked(api.listMessages).mockResolvedValue([makeMessage({ observations: [] })]);
+    const { container } = render(<ChatView />);
+    await screen.findByText("hallo");
+    expect(container.querySelector(".tool-activity")).not.toBeInTheDocument();
   });
 
   it("shows a failed message's error text", async () => {

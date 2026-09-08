@@ -85,8 +85,24 @@ class Message(Base):
     # has made at least one LLM call.
     processed_by: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
+    # Which tools ran while answering this message, JSON-encoded (same
+    # shape as PendingAction.observations - {"tool", "arguments",
+    # "result"|"error"}). Lets the PWA show short tool-activity status
+    # lines (project spec section 29: "🔧 Searching files ✓ Found 4
+    # files" - no chain-of-thought, just what ran and whether it
+    # succeeded).
+    observations_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]", server_default="[]")
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    @property
+    def observations(self) -> list:
+        return json.loads(self.observations_json or "[]")
+
+    @observations.setter
+    def observations(self, value: list | None) -> None:
+        self.observations_json = json.dumps(value or [], default=str)
 
 
 # Plain strings (not a SQLAlchemy Enum/CHECK constraint), same reasoning
@@ -328,5 +344,6 @@ def run_migrations() -> None:
             "retry_count": "INTEGER NOT NULL DEFAULT 0",
             "next_retry_at": "DATETIME",
             "processed_by": "VARCHAR(16)",
+            "observations_json": "TEXT NOT NULL DEFAULT '[]'",
         },
     )

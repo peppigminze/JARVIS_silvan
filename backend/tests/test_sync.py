@@ -15,6 +15,36 @@ def test_sync_pending_flow(client, user_headers, agent_headers):
     assert complete["processed_by"] is None  # not reported by the agent this time
 
 
+def test_sync_complete_records_observations(client, user_headers, agent_headers):
+    client.post("/api/messages", json={"content": "Erstelle einen Task"}, headers=user_headers)
+    pending = client.get("/api/sync/pending", headers=agent_headers).json()
+
+    observations = [
+        {"tool": "create_task", "arguments": {"title": "Test"}, "result": {"id": 1, "title": "Test"}}
+    ]
+    complete = client.post(
+        "/api/sync/complete",
+        json={"message_id": pending[0]["id"], "response": "Erledigt.", "observations": observations},
+        headers=agent_headers,
+    ).json()
+    assert complete["observations"] == observations
+
+    listed = client.get("/api/messages", headers=user_headers).json()
+    assert listed[-1]["observations"] == observations
+
+
+def test_sync_complete_defaults_to_empty_observations(client, user_headers, agent_headers):
+    client.post("/api/messages", json={"content": "Hallo"}, headers=user_headers)
+    pending = client.get("/api/sync/pending", headers=agent_headers).json()
+
+    complete = client.post(
+        "/api/sync/complete",
+        json={"message_id": pending[0]["id"], "response": "Hi!"},
+        headers=agent_headers,
+    ).json()
+    assert complete["observations"] == []
+
+
 def test_sync_complete_records_processed_by(client, user_headers, agent_headers):
     client.post("/api/messages", json={"content": "Hallo"}, headers=user_headers)
     pending = client.get("/api/sync/pending", headers=agent_headers).json()

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ChatMessage } from "../types";
+import type { ChatMessage, ToolObservation } from "../types";
 import { flushOfflineQueue, listMessages, sendMessage } from "../services/api";
 import { usePolling } from "../hooks/usePolling";
 
@@ -23,6 +23,38 @@ const PROCESSED_BY_LABEL: Record<"local" | "cloud", string> = {
   local: "🖥️ Lokal",
   cloud: "☁️ Cloud",
 };
+
+// Short, human labels for tool activity (project spec section 29: show
+// what ran, never the raw tool name or any chain-of-thought reasoning).
+const TOOL_ACTIVITY_LABEL: Record<string, string> = {
+  read_file: "Datei gelesen",
+  write_file: "Datei geschrieben",
+  list_files: "Dateien aufgelistet",
+  search_files: "Dateien durchsucht",
+  move_file: "Datei verschoben",
+  copy_file: "Datei kopiert",
+  delete_file: "Datei gelöscht",
+  create_task: "Aufgabe erstellt",
+  list_tasks: "Aufgaben abgerufen",
+  complete_task: "Aufgabe erledigt",
+  delete_task: "Aufgabe gelöscht",
+  save_memory: "Erinnerung gespeichert",
+  search_memory: "Erinnerung durchsucht",
+  get_current_time: "Uhrzeit abgefragt",
+  get_system_status: "Systeminfo abgefragt",
+  cpu_usage: "CPU-Auslastung abgefragt",
+  ram_usage: "RAM-Auslastung abgefragt",
+  disk_usage: "Speicherplatz abgefragt",
+  network_status: "Netzwerkstatus abgefragt",
+  list_running_applications: "Programme aufgelistet",
+  open_application: "Programm geöffnet",
+  close_application: "Programm geschlossen",
+  run_command: "Befehl ausgeführt",
+};
+
+function toolActivityLabel(tool: string): string {
+  return TOOL_ACTIVITY_LABEL[tool] ?? tool;
+}
 
 export function ChatView() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -124,6 +156,7 @@ function MessageBubbles({ message }: { message: ChatMessage }) {
 
       {message.status === "completed" && message.response && (
         <div className="bubble-row is-jarvis">
+          {message.observations.length > 0 && <ToolActivity observations={message.observations} />}
           <div className="bubble">{message.response}</div>
           {message.processed_by && (
             <div className="bubble-meta">
@@ -146,5 +179,20 @@ function MessageBubbles({ message }: { message: ChatMessage }) {
         </div>
       )}
     </>
+  );
+}
+
+function ToolActivity({ observations }: { observations: ToolObservation[] }) {
+  return (
+    <div className="tool-activity">
+      {observations.map((obs, i) => (
+        <div className="tool-activity__line" key={i}>
+          <span aria-hidden="true">🔧</span> {toolActivityLabel(obs.tool)}{" "}
+          <span className={obs.error ? "tool-activity__fail" : "tool-activity__ok"}>
+            {obs.error ? "✗" : "✓"}
+          </span>
+        </div>
+      ))}
+    </div>
   );
 }
