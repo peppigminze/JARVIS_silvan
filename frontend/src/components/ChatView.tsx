@@ -58,6 +58,7 @@ const TOOL_ACTIVITY_LABEL: Record<string, string> = {
   git_commit: "Git-Commit erstellt",
   git_push: "Git-Push ausgeführt",
   git_pull: "Git-Pull ausgeführt",
+  fetch_url: "Webseite abgerufen",
 };
 
 function toolActivityLabel(tool: string): string {

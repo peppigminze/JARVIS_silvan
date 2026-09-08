@@ -324,12 +324,13 @@ Agent wieder online ist und pollt.
 Bewusst **nicht** in V1 enthalten (siehe Auftrag, Abschnitt "Keine
 Fake-Features" - nichts davon ist vorgetäuscht, es ist als TODO markiert):
 
-- **Web-Recherche und GitHub-API-Tools** (Issues, Pull Requests) -
-  Dateisystem/Terminal/Programme (Phase 5) und lokale `git`-Tools
-  (`git_status`/`git_diff`/`git_log`/`git_branch`/`git_commit`/
-  `git_push`/`git_pull`) sind implementiert, siehe Abschnitt 16
-  "Tool-Sicherheit". Ein GitHub-API-Tool bräuchte einen eigenen
-  Personal-Access-Token (analog zu Abschnitt 17 "Cloud-LLM-Fallback").
+- **Echte Web-Suche und GitHub-API-Tools** (Issues, Pull Requests) -
+  `fetch_url` kann eine konkrete Seite lesen (siehe Abschnitt 16), aber
+  es gibt keine Suchmaschinen-Integration ("suche im Web nach X"), da
+  keine Such-API konfiguriert ist. Dateisystem/Terminal/Programme
+  (Phase 5) und lokale `git`-Tools sind implementiert. Ein
+  GitHub-API-Tool bräuchte einen eigenen Personal-Access-Token (analog
+  zu Abschnitt 17 "Cloud-LLM-Fallback").
 - **Vector-Search / Embeddings** für Memory - aktuell einfache
   Keyword-Suche (`MemoryStore.search`), die Schnittstelle ist aber
   stabil und austauschbar.
@@ -354,7 +355,7 @@ Jedes Tool (`app/tools/*.py`) trägt eine Sicherheitsstufe:
 
 | Stufe | Bedeutung | Beispiele |
 |---|---|---|
-| `SAFE` | läuft automatisch, ohne Rückfrage | `list_tasks`, `read_file`, `list_files`, `search_files`, `cpu_usage`, `ram_usage`, `disk_usage`, `network_status`, `list_running_applications`, `get_current_time`, `save_memory`, `search_memory`, `list_projects`, `git_status`, `git_diff`, `git_log`, `git_branch` |
+| `SAFE` | läuft automatisch, ohne Rückfrage | `list_tasks`, `read_file`, `list_files`, `search_files`, `cpu_usage`, `ram_usage`, `disk_usage`, `network_status`, `list_running_applications`, `get_current_time`, `save_memory`, `search_memory`, `list_projects`, `git_status`, `git_diff`, `git_log`, `git_branch`, `fetch_url` |
 | `CONFIRM_REQUIRED` | pausiert die Pipeline; ein Mensch muss in der PWA bestätigen/ablehnen | `write_file`, `move_file`, `copy_file`, `delete_file`, `delete_task`, `run_command`, `open_application`, `close_application`, `git_commit`, `git_push`, `git_pull` |
 | `BLOCKED` | (Framework vorhanden, aktuell nicht genutzt) | - |
 
@@ -384,6 +385,18 @@ abgelehnt, bevor sie überhaupt zur Bestätigung kommen. Jeder tatsächlich
 ausgeführte Befehl wird mit Befehl, Arbeitsverzeichnis, stdout/stderr,
 Exit-Code und Timeout-Status in `command_logs` protokolliert
 (`app/tools/terminal_tools.py`).
+
+**Web-Fetch (`fetch_url`):** Kein Suchmaschinen-Zugriff (keine Such-API
+konfiguriert), aber JARVIS kann eine konkrete URL abrufen und deren
+lesbaren Text extrahieren - der Systemprompt weist das Modell an, die
+URL als Quelle zu nennen, wenn es Informationen daraus verwendet
+(Projektauftrag Abschnitt 26). Jede Anfrage läuft zuerst durch einen
+SSRF-Schutz (`app/tools/ssrf_guard.py`, angelehnt an ein Muster aus dem
+Open-Source-Projekt OpenJarvis, Apache 2.0) - private/reservierte
+IP-Bereiche und Cloud-Metadata-Endpunkte (z. B. `169.254.169.254`)
+werden blockiert, auch nach einer Weiterleitung erneut geprüft. So kann
+das Modell dieses Tool nicht nutzen, um dein eigenes lokales Netzwerk
+(inklusive des JARVIS-Backends selbst) abzuklopfen.
 
 ## 17. Cloud-LLM-Fallback (optional)
 
