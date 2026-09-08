@@ -12,9 +12,18 @@ since everything goes through these two dependency functions.
 """
 from __future__ import annotations
 
+import secrets
+
 from fastapi import Header, HTTPException, status
 
 from app.config import get_settings
+
+
+def _tokens_match(a: str, b: str) -> bool:
+    """Constant-time comparison - a plain `!=` leaks how many leading
+    characters matched via response timing, letting an attacker with
+    network access recover the token byte-by-byte over many requests."""
+    return secrets.compare_digest(a, b)
 
 
 def _extract_token(authorization: str | None) -> str:
@@ -36,7 +45,7 @@ def require_user(authorization: str | None = Header(default=None)) -> str:
     """Dependency for endpoints called by the human user's client (PWA)."""
     settings = get_settings()
     token = _extract_token(authorization)
-    if token != settings.USER_TOKEN:
+    if not _tokens_match(token, settings.USER_TOKEN):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid user token.")
     return token
 
@@ -45,7 +54,7 @@ def require_agent(authorization: str | None = Header(default=None)) -> str:
     """Dependency for endpoints called only by the local PC agent."""
     settings = get_settings()
     token = _extract_token(authorization)
-    if token != settings.AGENT_TOKEN:
+    if not _tokens_match(token, settings.AGENT_TOKEN):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid agent token.")
     return token
 
@@ -54,6 +63,6 @@ def require_user_or_agent(authorization: str | None = Header(default=None)) -> s
     """Dependency for endpoints either side may call (e.g. reading tasks)."""
     settings = get_settings()
     token = _extract_token(authorization)
-    if token not in (settings.USER_TOKEN, settings.AGENT_TOKEN):
+    if not (_tokens_match(token, settings.USER_TOKEN) or _tokens_match(token, settings.AGENT_TOKEN)):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token.")
     return token

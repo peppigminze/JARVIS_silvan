@@ -23,9 +23,28 @@ logger = logging.getLogger("jarvis.backend")
 settings = get_settings()
 
 
+_PLACEHOLDER_TOKENS = {"change-me-user-token", "change-me-agent-token"}
+
+
+def _warn_if_default_tokens(settings) -> None:
+    """.env.example ships obviously-fake placeholder tokens with an
+    explicit "do not use these" comment - but nothing stopped someone
+    from starting the backend without changing them, silently running
+    with a publicly-known credential. Loud, not blocking: V1 has no
+    other bootstrap step to hang a hard failure on, and a warning still
+    gets the point across every single startup until it's fixed."""
+    if settings.USER_TOKEN in _PLACEHOLDER_TOKENS or settings.AGENT_TOKEN in _PLACEHOLDER_TOKENS:
+        logger.warning(
+            "SECURITY: USER_TOKEN and/or AGENT_TOKEN is still the placeholder value from "
+            ".env.example. Anyone who has seen that file can authenticate. Set your own "
+            "random tokens in .env before exposing this backend beyond localhost."
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("JARVIS backend starting (env=%s)", settings.APP_ENV)
+    _warn_if_default_tokens(settings)
     init_db()
     logger.info("Database ready.")
     scheduler_task = asyncio.create_task(run_scheduler_forever())

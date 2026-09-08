@@ -48,6 +48,7 @@ Dieses Repository enthält die erste funktionierende Version (V1):
 17. [Cloud-LLM-Fallback (optional)](#17-cloud-llm-fallback-optional)
 18. [Wake-on-LAN](#18-wake-on-lan)
 19. [Autostart (Windows)](#19-autostart-windows)
+20. [Security-Hardening-Pass](#20-security-hardening-pass)
 
 ---
 
@@ -482,11 +483,60 @@ stderr). Diese Aufgabe läuft für deinen eigenen Benutzer und benötigt
 
 > **Wichtig:** Das Anlegen einer geplanten Aufgabe ist eine dauerhafte
 > Systemänderung. `python scripts\autostart.py install` führt das
-> tatsächlich aus - lies dir vorher an, was es tut (siehe
-> `scripts/autostart.py`), und führe es nur aus, wenn du das wirklich
-> willst. Die reinen Skript-Bausteine sind unit-getestet
-> (`backend/tests/test_autostart.py`); das tatsächliche Registrieren
-> in der Aufgabenplanung wurde hier nur mit `status` (rein lesend)
-> geprüft, nicht mit einer echten Installation - das ist eine bewusste
-> Entscheidung, keine dauerhafte Änderung ungefragt an deinem System
-> vorzunehmen.
+> tatsächlich aus. Auf diesem Rechner wurde die Aufgabe mit deiner
+> ausdrücklichen Bestätigung bereits registriert und end-to-end
+> verifiziert: `status` meldet sie als aktiv, und `start_jarvis.ps1`
+> startet Backend und Agent nachweislich korrekt (per `/health`-Check
+> und den Logs in `logs/` bestätigt). Die reinen Skript-Bausteine sind
+> zusätzlich unit-getestet (`backend/tests/test_autostart.py`). Auf
+> einem neuen Rechner führst du `install` selbst aus, sobald du es
+> möchtest - ein UAC-Dialog erscheint dabei, den du bestätigen musst.
+
+## 20. Security-Hardening-Pass
+
+Systematische Durchsicht des gesamten Codes (Projektauftrag Abschnitt
+37). Gefunden und behoben:
+
+- **Timing-Angriff auf Tokens:** Der Vergleich der Bearer-Tokens nutzte
+  `!=`, was die Antwortzeit minimal mit der Anzahl übereinstimmender
+  Zeichen korrelieren lässt. Ersetzt durch `secrets.compare_digest`
+  (`app/auth.py`), zeitkonstant.
+- **Stille Platzhalter-Tokens:** Startet das Backend mit den
+  Standardwerten aus `.env.example` (`change-me-user-token` /
+  `change-me-agent-token`), gab es keinerlei Hinweis darauf. Jetzt eine
+  laute Warnung beim Start (`app/main.py::_warn_if_default_tokens`).
+
+Geprüft und für unbedenklich befunden:
+
+- **Keine hardcodierten Secrets** im Code (durchsucht).
+- **CORS** ist nicht auf `*` gesetzt (Standard: nur `localhost:5173`/
+  `127.0.0.1:5173`), trotz `allow_credentials=True`.
+- **Jeder API-Endpunkt** außer `/health` und `/` verlangt `require_user`
+  oder `require_agent` - einzeln durchgegangen (`app/api/*.py`).
+- **Keine XSS-Vektoren** im Frontend (kein `dangerouslySetInnerHTML`,
+  `innerHTML` oder `eval` - React escaped Inhalte standardmäßig).
+- **Kein Token-Leck** in Logs (Backend oder Frontend).
+- **Kein Bypass der Tool-Bestätigung:** `tool.execute()` wird
+  codebaseweit nur an zwei Stellen aufgerufen, beide hinter dem
+  SAFE/CONFIRM_REQUIRED-Gate bzw. dem authentifizierten
+  Confirm/Reject-Flow (siehe Abschnitt 16).
+- `run_command`/`open_application` interpretieren den Befehlsstring
+  absichtlich als Shell-Kommando (das ist die Funktion des Tools,
+  nicht ein Bug) - abgesichert durch Bestätigungspflicht + Denylist,
+  nicht durch Escaping.
+
+Bekannt, bewusst nicht automatisch gefixt:
+
+- `npm audit` meldet 3 Schwachstellen (2 moderate, 1 high) in
+  `esbuild`/`vite`/`vite-plugin-pwa` - betrifft ausschließlich den
+  Vite-**Dev-Server** (`npm run dev`), nicht den Produktions-Build.
+  Der Fix (`npm audit fix --force`) wäre ein Breaking-Change auf Vite
+  8; nicht ungefragt durchgeführt, da das Risiko für ein lokales
+  Dev-Tool gering ist. Führe den Fix selbst aus, wenn du magst - teste
+  danach `npm run dev` und `npm run build`.
+
+`app/database/db.py::ensure_columns()` baut SQL-Statements per
+f-string (SQLite unterstützt keine parametrisierten Identifier für
+DDL). Das ist nur sicher, weil ausschließlich mit statischen,
+hartkodierten Werten aus `run_migrations()` aufgerufen - im Code
+explizit als Warnung dokumentiert, falls das mal geändert wird.

@@ -80,6 +80,13 @@ def ensure_columns(table_name: str, column_defs: dict[str, str]) -> None:
     column on a table that already exists, which would crash the first
     request that touches it. This is the minimal safe alternative:
     additive, idempotent, and never touches or drops existing data.
+
+    SECURITY: `table_name`/`column_defs` are interpolated directly into
+    SQL (SQLite's DDL statements don't support parameterized identifiers
+    the way DML does). This is safe ONLY because every call site is a
+    hardcoded literal in run_migrations() below - never call this with
+    a table/column name derived from a request, config value, or any
+    other untrusted input.
     """
     with engine.connect() as conn:
         existing = {row[1] for row in conn.execute(text(f"PRAGMA table_info({table_name})"))}
