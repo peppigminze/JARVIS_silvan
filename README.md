@@ -47,6 +47,7 @@ Dieses Repository enthält die erste funktionierende Version (V1):
 16. [Tool-Sicherheit](#16-tool-sicherheit)
 17. [Cloud-LLM-Fallback (optional)](#17-cloud-llm-fallback-optional)
 18. [Wake-on-LAN](#18-wake-on-lan)
+19. [Autostart (Windows)](#19-autostart-windows)
 
 ---
 
@@ -324,7 +325,8 @@ Fake-Features" - nichts davon ist vorgetäuscht, es ist als TODO markiert):
   `useReminderNotifications.ts` - reines mobiles Push ist ein späterer Schritt).
 - **Sicherer Wake-on-LAN-Gateway/Tunnel** für die PWA (das Magic-Packet
   selbst lässt sich schon heute per Skript verschicken, siehe Abschnitt
-  18 "Wake-on-LAN") sowie automatischer PC-Autostart des Agents.
+  18 "Wake-on-LAN"). Autostart via Windows-Aufgabenplanung ist bereits
+  vorhanden (Abschnitt 19), aber nicht automatisch installiert.
 
 Diese Punkte sind absichtlich für spätere Versionen zurückgestellt, um
 eine kleine, tatsächlich funktionierende V1 zu priorisieren.
@@ -446,3 +448,45 @@ ein Wake-Signal auslösen könnte, ohne eine unsichere öffentliche
 UDP-Portfreigabe am Router einzurichten (siehe Projektauftrag Abschnitt
 23: "keine unsichere öffentliche UDP-Portfreigabe als
 Standardlösung").
+
+## 19. Autostart (Windows)
+
+JARVIS kann sich per **Windows-Aufgabenplanung** (Task Scheduler)
+automatisch bei der Anmeldung starten - Backend und Agent zusammen,
+über `scripts/start_jarvis.ps1`.
+
+**Registrieren** (einmalig, nach dem normalen Setup aus Abschnitt 1-9):
+
+```powershell
+python scripts\autostart.py install
+```
+
+**Status prüfen** (rein lesend):
+
+```powershell
+python scripts\autostart.py status
+```
+
+**Wieder entfernen:**
+
+```powershell
+python scripts\autostart.py uninstall
+```
+
+Die eigentliche Aufgabe wird bei Anmeldung mit ~20 Sekunden Verzögerung
+ausgelöst (damit der Desktop erst fertig geladen ist) und startet
+Backend und Agent unsichtbar im Hintergrund; Logs landen in `logs/`
+(`backend.log`, `agent.log`, jeweils mit `.err.log`-Pendant für
+stderr). Diese Aufgabe läuft für deinen eigenen Benutzer und benötigt
+**keine** Administratorrechte/UAC-Bestätigung zum Registrieren.
+
+> **Wichtig:** Das Anlegen einer geplanten Aufgabe ist eine dauerhafte
+> Systemänderung. `python scripts\autostart.py install` führt das
+> tatsächlich aus - lies dir vorher an, was es tut (siehe
+> `scripts/autostart.py`), und führe es nur aus, wenn du das wirklich
+> willst. Die reinen Skript-Bausteine sind unit-getestet
+> (`backend/tests/test_autostart.py`); das tatsächliche Registrieren
+> in der Aufgabenplanung wurde hier nur mit `status` (rein lesend)
+> geprüft, nicht mit einer echten Installation - das ist eine bewusste
+> Entscheidung, keine dauerhafte Änderung ungefragt an deinem System
+> vorzunehmen.
