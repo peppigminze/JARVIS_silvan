@@ -66,6 +66,7 @@ async def test_uses_local_when_available_never_touches_cloud(db_session):
 
     assert result.reply == "local reply"
     assert cloud.calls == 0  # cost control: cloud never touched when local works
+    assert result.processed_by == "local"
 
 
 async def test_falls_back_to_cloud_when_local_unavailable(db_session):
@@ -77,6 +78,24 @@ async def test_falls_back_to_cloud_when_local_unavailable(db_session):
 
     assert result.reply == "cloud reply"
     assert local.calls == 1
+    assert result.processed_by == "cloud"
+
+
+async def test_processed_by_resets_between_independent_messages(db_session):
+    """A later message must not inherit a stale processed_by=cloud from
+    an earlier one just because they share the same JarvisAgent
+    instance (which sync_worker does - one instance for the process's
+    whole lifetime)."""
+    local_down_then_up = FakeLocalLLM(available=False)
+    cloud = FakeCloudLLM(available=True)
+    agent = JarvisAgent(llm=local_down_then_up, tools=build_default_registry(), cloud_llm=cloud)
+
+    first = await agent.run_pipeline(db_session, "first message")
+    assert first.processed_by == "cloud"
+
+    local_down_then_up.available = True
+    second = await agent.run_pipeline(db_session, "second message")
+    assert second.processed_by == "local"
 
 
 async def test_no_cloud_configured_still_raises_llm_unavailable(db_session):

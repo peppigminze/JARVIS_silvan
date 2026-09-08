@@ -126,6 +126,10 @@ class PipelineResult:
     observations: List[dict] = field(default_factory=list)
     pending_tool: Optional[str] = None
     pending_arguments: Optional[dict] = None
+    # "local" or "cloud" - only meaningful once at least one LLM call
+    # happened in this run (i.e. usually once done=True, or if paused
+    # after a planning call already went through _chat()).
+    processed_by: Optional[str] = None
 
 
 class JarvisAgent:
@@ -137,6 +141,11 @@ class JarvisAgent:
         # as a first choice. None unless the user explicitly enabled it
         # and configured an API key (see app/llm/factory.py).
         self.cloud_llm = cloud_llm
+        # Set by _chat() on every call, reset at the start of each
+        # run_pipeline() - tracks whether *this* request ever fell back
+        # to cloud, so the final PipelineResult can report it (project
+        # spec section 21: PWA shows 🖥️ Local / ☁️ Cloud per message).
+        self._used_cloud_this_run = False
 
     async def _chat(self, messages: List[ChatMessage], temperature: float = 0.3) -> str:
         """LOCAL FIRST, always: try the primary (local) LLM, and only if
@@ -148,6 +157,7 @@ class JarvisAgent:
             if self.cloud_llm is None:
                 raise
             logger.warning("Local LLM unavailable - falling back to cloud LLM.")
+            self._used_cloud_this_run = True
             return await self.cloud_llm.chat(messages, temperature=temperature)
 
     # ---------------------------------------------------------- receive
@@ -299,14 +309,24 @@ class JarvisAgent:
     # ---------------------------------------------------------- pipeline
 
     async def run_pipeline(
-        self, db: Session, content: str, observations: Optional[List[dict]] = None
+        self,
+        db: Session,
+        content: str,
+        observations: Optional[List[dict]] = None,
+        processed_by: Optional[str] = None,
     ) -> PipelineResult:
         """Run (or resume) the understand -> plan -> act loop for a
         message and return its outcome. Bounded by MAX_AGENT_STEPS,
         counting steps already taken if resuming after a confirmation.
 
+        `processed_by` carries forward whether an earlier segment of
+        this same message (before a confirmation pause) already fell
+        back to cloud, so a resumed run doesn't forget and under-report
+        "local" for a message that did use cloud earlier on.
+
         Raises LLMUnavailableError if the local LLM cannot be reached.
         """
+        self._used_cloud_this_run = processed_by == "cloud"
         context = self.understand(db, content)
         observations = list(observations or [])
         steps_taken = len(observations)
@@ -316,7 +336,7 @@ class JarvisAgent:
 
             if not decision.tool:
                 reply = await self._summarize(content, observations) if observations else (decision.reply or "...")
-                return PipelineResult(done=True, reply=reply, observations=observations)
+                return PipelineResult(done=True, reply=reply, observations=observations, processed_by=self._provider())
 
             tool = self.tools.get(decision.tool)
             if tool is None:
@@ -337,7 +357,7 @@ class JarvisAgent:
                     decision.tool,
                 )
                 reply = await self._summarize(content, observations)
-                return PipelineResult(done=True, reply=reply, observations=observations)
+                return PipelineResult(done=True, reply=reply, observations=observations, processed_by=self._provider())
 
             if not self.tools.is_executable_automatically(decision.tool):
                 return PipelineResult(
@@ -346,6 +366,7 @@ class JarvisAgent:
                     observations=observations,
                     pending_tool=decision.tool,
                     pending_arguments=decision.arguments,
+                    processed_by=self._provider(),
                 )
 
             tool_result = await self.execute_tools(db, tool, decision.arguments)
@@ -354,8 +375,11 @@ class JarvisAgent:
 
             if decision.done:
                 reply = await self._summarize(content, observations)
-                return PipelineResult(done=True, reply=reply, observations=observations)
+                return PipelineResult(done=True, reply=reply, observations=observations, processed_by=self._provider())
 
         logger.warning("Agent exceeded MAX_AGENT_STEPS=%d for a single request.", MAX_AGENT_STEPS)
         reply = await self._summarize(content, observations, truncated=True)
-        return PipelineResult(done=True, reply=reply, observations=observations)
+        return PipelineResult(done=True, reply=reply, observations=observations, processed_by=self._provider())
+
+    def _provider(self) -> str:
+        return "cloud" if self._used_cloud_this_run else "local"

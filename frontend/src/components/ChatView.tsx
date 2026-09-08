@@ -9,11 +9,19 @@ interface LocalQueued {
 }
 
 const STATUS_LABEL: Record<ChatMessage["status"], string> = {
-  pending: "Wartet auf PC",
-  processing: "Wird verarbeitet",
+  pending: "⏳ Wartet auf PC",
+  processing: "⏳ Wird verarbeitet",
   completed: "Erledigt",
   failed: "Fehlgeschlagen",
   cancelled: "Abgebrochen",
+};
+
+// Shows how a completed request was actually answered (project spec
+// section 21) - 🖥️ local Ollama, or ☁️ the optional cloud fallback
+// (only ever used when local was unreachable, see README section 17).
+const PROCESSED_BY_LABEL: Record<"local" | "cloud", string> = {
+  local: "🖥️ Lokal",
+  cloud: "☁️ Cloud",
 };
 
 export function ChatView() {
@@ -117,6 +125,11 @@ function MessageBubbles({ message }: { message: ChatMessage }) {
       {message.status === "completed" && message.response && (
         <div className="bubble-row is-jarvis">
           <div className="bubble">{message.response}</div>
+          {message.processed_by && (
+            <div className="bubble-meta">
+              <span className="pill status-completed">{PROCESSED_BY_LABEL[message.processed_by]}</span>
+            </div>
+          )}
         </div>
       )}
 

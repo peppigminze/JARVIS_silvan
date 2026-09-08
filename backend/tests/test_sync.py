@@ -12,6 +12,22 @@ def test_sync_pending_flow(client, user_headers, agent_headers):
     ).json()
     assert complete["status"] == "completed"
     assert complete["response"] == "Erledigt."
+    assert complete["processed_by"] is None  # not reported by the agent this time
+
+
+def test_sync_complete_records_processed_by(client, user_headers, agent_headers):
+    client.post("/api/messages", json={"content": "Hallo"}, headers=user_headers)
+    pending = client.get("/api/sync/pending", headers=agent_headers).json()
+
+    complete = client.post(
+        "/api/sync/complete",
+        json={"message_id": pending[0]["id"], "response": "Hi!", "processed_by": "cloud"},
+        headers=agent_headers,
+    ).json()
+    assert complete["processed_by"] == "cloud"
+
+    listed = client.get("/api/messages", headers=user_headers).json()
+    assert listed[-1]["processed_by"] == "cloud"
 
 
 def test_sync_fail_flow(client, user_headers, agent_headers):

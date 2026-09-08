@@ -80,6 +80,7 @@ def complete_message(
     message.response = payload.response
     message.status = MessageStatus.completed
     message.error = None
+    message.processed_by = payload.processed_by
     message.processed_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(message)

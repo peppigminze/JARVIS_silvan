@@ -32,11 +32,11 @@ class BackendClient:
             resp.raise_for_status()
             return resp.json()
 
-    async def complete_message(self, message_id: int, response: str) -> None:
+    async def complete_message(self, message_id: int, response: str, processed_by: str | None = None) -> None:
         async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
             resp = await client.post(
                 f"{self.base_url}/api/sync/complete",
-                json={"message_id": message_id, "response": response},
+                json={"message_id": message_id, "response": response, "processed_by": processed_by},
                 headers=self.headers,
             )
             resp.raise_for_status()

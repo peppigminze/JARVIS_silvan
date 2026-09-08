@@ -2,6 +2,8 @@ export type MessageStatus = "pending" | "processing" | "completed" | "failed" | 
 export type TaskStatus = "pending" | "completed" | "cancelled";
 export type TaskPriority = "low" | "medium" | "high";
 
+export type ProcessedBy = "local" | "cloud" | null;
+
 export interface ChatMessage {
   id: number;
   client_id: string | null;
@@ -9,6 +11,8 @@ export interface ChatMessage {
   status: MessageStatus;
   response: string | null;
   error: string | null;
+  retry_count: number;
+  processed_by: ProcessedBy;
   created_at: string;
   processed_at: string | null;
 }

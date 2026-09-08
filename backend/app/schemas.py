@@ -38,6 +38,7 @@ class MessageOut(BaseModel):
     response: Optional[str]
     error: Optional[str]
     retry_count: int
+    processed_by: Optional[str]
     created_at: datetime
     processed_at: Optional[datetime]
 
@@ -168,6 +169,7 @@ class ActionFailRequest(BaseModel):
 class SyncCompleteRequest(BaseModel):
     message_id: int
     response: str
+    processed_by: Optional[str] = None
 
 
 class SyncFailRequest(BaseModel):

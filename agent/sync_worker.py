@@ -191,8 +191,8 @@ class SyncWorker:
 
     async def _apply_result(self, message_id: int, result: PipelineResult) -> None:
         if result.done:
-            await self.client.complete_message(message_id, result.reply)
-            logger.info("Message %s completed.", message_id)
+            await self.client.complete_message(message_id, result.reply, processed_by=result.processed_by)
+            logger.info("Message %s completed (processed_by=%s).", message_id, result.processed_by)
             return
 
         await self.client.create_pending_action(

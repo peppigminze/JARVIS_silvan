@@ -15,6 +15,8 @@ function makeMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
     status: "completed",
     response: "hi zurück",
     error: null,
+    retry_count: 0,
+    processed_by: "local",
     created_at: new Date().toISOString(),
     processed_at: new Date().toISOString(),
     ...overrides,
@@ -41,6 +43,18 @@ describe("ChatView", () => {
     render(<ChatView />);
     expect(await screen.findByText("hallo")).toBeInTheDocument();
     expect(await screen.findByText("hi zurück")).toBeInTheDocument();
+  });
+
+  it("shows a 🖥️ Lokal badge for a message answered locally", async () => {
+    vi.mocked(api.listMessages).mockResolvedValue([makeMessage({ processed_by: "local" })]);
+    render(<ChatView />);
+    expect(await screen.findByText("🖥️ Lokal")).toBeInTheDocument();
+  });
+
+  it("shows a ☁️ Cloud badge for a message answered via cloud fallback", async () => {
+    vi.mocked(api.listMessages).mockResolvedValue([makeMessage({ processed_by: "cloud" })]);
+    render(<ChatView />);
+    expect(await screen.findByText("☁️ Cloud")).toBeInTheDocument();
   });
 
   it("shows a failed message's error text", async () => {

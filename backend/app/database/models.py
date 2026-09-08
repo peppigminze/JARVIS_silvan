@@ -79,6 +79,12 @@ class Message(Base):
     # passed, so a down Ollama doesn't get hammered every poll interval.
     next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # "local" or "cloud" - which LLM actually produced the final answer
+    # (project spec section 21: the PWA shows 🖥️ Local / ☁️ Cloud so the
+    # user can tell how a request was handled). None until the pipeline
+    # has made at least one LLM call.
+    processed_by: Mapped[str | None] = mapped_column(String(16), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -321,5 +327,6 @@ def run_migrations() -> None:
         {
             "retry_count": "INTEGER NOT NULL DEFAULT 0",
             "next_retry_at": "DATETIME",
+            "processed_by": "VARCHAR(16)",
         },
     )
