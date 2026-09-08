@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import actions
 from app.api import agent as agent_api
-from app.api import health, memory, messages, sync, tasks
+from app.api import health, memory, messages, settings as settings_api, sync, tasks
 from app.config import get_settings
 from app.database.db import init_db
 from app.scheduler import run_forever as run_scheduler_forever
@@ -50,6 +50,7 @@ app.include_router(memory.router)
 app.include_router(sync.router)
 app.include_router(agent_api.router)
 app.include_router(actions.router)
+app.include_router(settings_api.router)
 
 
 @app.get("/")

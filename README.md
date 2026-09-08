@@ -46,6 +46,7 @@ Dieses Repository enthält die erste funktionierende Version (V1):
 15. [Roadmap / bekannte Einschränkungen von V1](#15-roadmap--bekannte-einschränkungen-von-v1)
 16. [Tool-Sicherheit](#16-tool-sicherheit)
 17. [Cloud-LLM-Fallback (optional)](#17-cloud-llm-fallback-optional)
+18. [Wake-on-LAN](#18-wake-on-lan)
 
 ---
 
@@ -321,7 +322,9 @@ Fake-Features" - nichts davon ist vorgetäuscht, es ist als TODO markiert):
 - **Push-Benachrichtigungen** an das Handy, wenn eine Nachricht fertig
   verarbeitet wurde (aktuell Browser-Notifications per Polling, siehe
   `useReminderNotifications.ts` - reines mobiles Push ist ein späterer Schritt).
-- **Wake-on-LAN**, automatischer PC-Autostart des Agents.
+- **Sicherer Wake-on-LAN-Gateway/Tunnel** für die PWA (das Magic-Packet
+  selbst lässt sich schon heute per Skript verschicken, siehe Abschnitt
+  18 "Wake-on-LAN") sowie automatischer PC-Autostart des Agents.
 
 Diese Punkte sind absichtlich für spätere Versionen zurückgestellt, um
 eine kleine, tatsächlich funktionierende V1 zu priorisieren.
@@ -393,3 +396,53 @@ wird nirgends hardcodiert oder geloggt.
 > (`backend/tests/test_cloud_fallback.py`), aber nicht live gegen eine
 > echte Cloud-API verifiziert - dafür bräuchte es deinen eigenen,
 > echten API-Key. Prüfe das selbst, bevor du dich darauf verlässt.
+
+## 18. Wake-on-LAN
+
+**Wichtige Einschränkung:** Backend und Agent laufen in V1 auf demselben
+PC, den du aufwecken willst. Ist dieser PC aus, sind Backend und Agent
+also auch aus - sie können sich unmöglich selbst ein Wake-Signal
+schicken. Ein Browser/die PWA kann außerdem grundsätzlich kein rohes
+UDP-Magic-Packet senden (keine Web-API dafür, aus Sicherheitsgründen).
+Deshalb gibt es hier bewusst **keinen** "PC aufwecken"-Button in der
+PWA, der ins Leere greifen würde (siehe Projektauftrag: "Keine
+Fake-Features").
+
+Die tatsächliche V1-Umsetzung (Abschnitt 23 im Auftrag):
+
+- `scripts/wake_pc.py` - ein eigenständiges, abhängigkeitsfreies Skript,
+  das ein echtes WOL-Magic-Packet verschickt. Es muss von einem
+  **anderen Gerät im selben lokalen Netzwerk** laufen (Laptop, Handy mit
+  Termux/Pythonista, Raspberry Pi, ...), nicht vom JARVIS-PC selbst.
+- Die **Settings-Seite** in der PWA (`SettingsView.tsx`) zeigt dir MAC-
+  Adresse, Broadcast-Adresse und den fertigen Befehl zum Kopieren an -
+  automatisch aus `WAKE_ON_LAN_MAC`/`WAKE_ON_LAN_BROADCAST`/
+  `WAKE_ON_LAN_PORT` in `.env` befüllt (`GET /api/settings`, rein
+  lesend).
+
+Voraussetzungen, damit Wake-on-LAN auf deinem PC überhaupt funktioniert
+(unabhängig von JARVIS, reine Windows-/BIOS-Sache):
+
+1. **BIOS/UEFI:** "Wake on LAN" bzw. "Power On by PCI-E/PCI" aktivieren.
+2. **Windows Geräte-Manager:** Netzwerkadapter → Eigenschaften →
+   Energieverwaltung → "Gerät kann Computer aus dem Ruhezustand
+   aktivieren" aktivieren, außerdem unter "Erweitert" "Wake on Magic
+   Packet" aktivieren, falls vorhanden.
+3. Der PC muss per **Kabel (Ethernet)** verbunden sein - die meisten
+   WLAN-Adapter unterstützen Wake-on-LAN aus dem Ausschaltzustand nicht
+   zuverlässig.
+
+MAC-Adresse deines aktiven Adapters findest du mit:
+
+```powershell
+ipconfig /all
+```
+
+(„Physische Adresse" unter deinem aktiven Netzwerkadapter).
+
+**Für später vorgesehen (nicht in V1):** ein sicherer Gateway/Tunnel
+oder ein Relay-Dienst, über den die PWA selbst - auch von unterwegs -
+ein Wake-Signal auslösen könnte, ohne eine unsichere öffentliche
+UDP-Portfreigabe am Router einzurichten (siehe Projektauftrag Abschnitt
+23: "keine unsichere öffentliche UDP-Portfreigabe als
+Standardlösung").

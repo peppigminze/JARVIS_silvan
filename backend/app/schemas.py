@@ -196,3 +196,25 @@ class SystemStatusOut(BaseModel):
     pending_messages: int
     llm_provider: str
     llm_available: Optional[bool] = None
+
+
+# ---------------------------------------------------------------- Settings (read-only)
+
+
+class WakeOnLanInfo(BaseModel):
+    configured: bool
+    mac_address: Optional[str]
+    broadcast: str
+    port: int
+    command: Optional[str]
+
+
+class SettingsOut(BaseModel):
+    llm_provider: str
+    local_llm_model: str
+    local_llm_base_url: str
+    cloud_llm_enabled: bool
+    cloud_llm_model: Optional[str]
+    allowed_directories: List[str]
+    message_max_retries: int
+    wake_on_lan: WakeOnLanInfo

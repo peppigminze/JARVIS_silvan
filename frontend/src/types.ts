@@ -42,6 +42,25 @@ export interface MemoryEntry {
   updated_at: string;
 }
 
+export interface WakeOnLanInfo {
+  configured: boolean;
+  mac_address: string | null;
+  broadcast: string;
+  port: number;
+  command: string | null;
+}
+
+export interface Settings {
+  llm_provider: string;
+  local_llm_model: string;
+  local_llm_base_url: string;
+  cloud_llm_enabled: boolean;
+  cloud_llm_model: string | null;
+  allowed_directories: string[];
+  message_max_retries: number;
+  wake_on_lan: WakeOnLanInfo;
+}
+
 export interface SystemStatus {
   pc_online: boolean;
   last_seen: string | null;

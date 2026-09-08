@@ -1,4 +1,4 @@
-import type { ChatMessage, MemoryEntry, MemoryType, PendingAction, SystemStatus, Task } from "../types";
+import type { ChatMessage, MemoryEntry, MemoryType, PendingAction, Settings, SystemStatus, Task } from "../types";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 const USER_TOKEN = import.meta.env.VITE_USER_TOKEN || "";
@@ -180,4 +180,8 @@ export async function rejectAction(id: number): Promise<PendingAction> {
 
 export async function getStatus(): Promise<SystemStatus> {
   return request<SystemStatus>("/api/status");
+}
+
+export async function getSettingsOverview(): Promise<Settings> {
+  return request<Settings>("/api/settings");
 }

@@ -57,6 +57,15 @@ class Settings(BaseSettings):
     ALLOWED_DIRECTORIES: str = ""
     TERMINAL_TIMEOUT_SECONDS: float = 30.0
 
+    # Wake-on-LAN (project spec section 23). Purely informational on the
+    # backend side - the backend/agent run ON this PC, so they can't send
+    # a wake packet to themselves. This is the PC's own MAC address, used
+    # so the Settings page can show ready-to-use wake instructions (see
+    # scripts/wake_pc.py, which must run from a DIFFERENT device).
+    WAKE_ON_LAN_MAC: str = ""
+    WAKE_ON_LAN_BROADCAST: str = "255.255.255.255"
+    WAKE_ON_LAN_PORT: int = 9
+
     # Sync/message retries (project spec section 19). A message that
     # fails because the local LLM was unreachable gets requeued instead
     # of failing permanently, up to this many times, with an increasing
