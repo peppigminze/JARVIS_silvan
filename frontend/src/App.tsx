@@ -11,6 +11,7 @@ import { SettingsView } from "./components/SettingsView";
 import { getStatus } from "./services/api";
 import { usePolling } from "./hooks/usePolling";
 import { useReminderNotifications } from "./hooks/useReminderNotifications";
+import { useMessageNotifications } from "./hooks/useMessageNotifications";
 import type { SystemStatus } from "./types";
 
 const TITLES: Record<View, string> = {
@@ -35,6 +36,7 @@ export default function App() {
 
   usePolling(refreshStatus, 10000, []);
   useReminderNotifications();
+  useMessageNotifications();
 
   return (
     <div className="shell">

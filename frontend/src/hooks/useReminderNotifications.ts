@@ -1,5 +1,6 @@
 import { useRef } from "react";
 import { getDueReminders } from "../services/api";
+import { ensureNotificationPermission } from "../services/notifications";
 import { usePolling } from "./usePolling";
 
 /**
@@ -16,20 +17,9 @@ export function useReminderNotifications(intervalMs = 15000) {
   // each time it re-fires) notifies again on its next occurrence
   // instead of being silenced for the rest of the session.
   const seenRef = useRef<Set<string>>(new Set());
-  const askedRef = useRef(false);
 
   usePolling(async () => {
-    if (!("Notification" in window)) return;
-
-    if (Notification.permission === "default" && !askedRef.current) {
-      askedRef.current = true;
-      try {
-        await Notification.requestPermission();
-      } catch {
-        // ignore - environments without a real prompt (e.g. some test setups)
-      }
-    }
-    if (Notification.permission !== "granted") return;
+    if (!(await ensureNotificationPermission())) return;
 
     let due;
     try {
