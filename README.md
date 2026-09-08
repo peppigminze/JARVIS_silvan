@@ -217,6 +217,16 @@ pytest
 Alle Tests laufen gegen eine In-Memory-SQLite-Datenbank und beeinflussen
 `jarvis.db` nicht.
 
+**Frontend-Tests** (Vitest + React Testing Library, deckt Chat, Tasks,
+Offline-Queue und PC-Status ab):
+
+```powershell
+cd frontend
+npm test
+```
+
+`npm run test:watch` startet den Watch-Modus für die Entwicklung.
+
 ## 12. Troubleshooting
 
 | Problem | Lösung |
@@ -530,13 +540,14 @@ Geprüft und für unbedenklich befunden:
 
 Bekannt, bewusst nicht automatisch gefixt:
 
-- `npm audit` meldet 3 Schwachstellen (2 moderate, 1 high) in
-  `esbuild`/`vite`/`vite-plugin-pwa` - betrifft ausschließlich den
-  Vite-**Dev-Server** (`npm run dev`), nicht den Produktions-Build.
-  Der Fix (`npm audit fix --force`) wäre ein Breaking-Change auf Vite
-  8; nicht ungefragt durchgeführt, da das Risiko für ein lokales
-  Dev-Tool gering ist. Führe den Fix selbst aus, wenn du magst - teste
-  danach `npm run dev` und `npm run build`.
+- `npm audit` meldet 6 Schwachstellen (4 moderate, 1 high, 1 critical) in
+  `esbuild`/`vite`/`vite-plugin-pwa`/`vitest` - alle dieselbe zugrunde
+  liegende Ursache (verwundbare `esbuild`-Version im Vite-**Dev-Server**,
+  `npm run dev`/`npm test`), nicht der Produktions-Build. Der Fix
+  (`npm audit fix --force`) wäre ein Breaking-Change auf Vite 8; nicht
+  ungefragt durchgeführt, da das Risiko für ein lokales Dev-Tool gering
+  ist. Führe den Fix selbst aus, wenn du magst - teste danach
+  `npm run dev`, `npm test` und `npm run build`.
 
 `app/database/db.py::ensure_columns()` baut SQL-Statements per
 f-string (SQLite unterstützt keine parametrisierten Identifier für
