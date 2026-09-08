@@ -54,6 +54,18 @@ export interface MemoryEntry {
   updated_at: string;
 }
 
+export interface Project {
+  id: number;
+  name: string;
+  path: string | null;
+  description: string | null;
+  technologies: string[];
+  repository: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface WakeOnLanInfo {
   configured: boolean;
   mac_address: string | null;

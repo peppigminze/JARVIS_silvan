@@ -50,6 +50,7 @@ const TOOL_ACTIVITY_LABEL: Record<string, string> = {
   open_application: "Programm geöffnet",
   close_application: "Programm geschlossen",
   run_command: "Befehl ausgeführt",
+  list_projects: "Projekte abgerufen",
 };
 
 function toolActivityLabel(tool: string): string {

@@ -1,4 +1,13 @@
-import type { ChatMessage, MemoryEntry, MemoryType, PendingAction, Settings, SystemStatus, Task } from "../types";
+import type {
+  ChatMessage,
+  MemoryEntry,
+  MemoryType,
+  PendingAction,
+  Project,
+  Settings,
+  SystemStatus,
+  Task,
+} from "../types";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 const USER_TOKEN = import.meta.env.VITE_USER_TOKEN || "";
@@ -184,4 +193,27 @@ export async function getStatus(): Promise<SystemStatus> {
 
 export async function getSettingsOverview(): Promise<Settings> {
   return request<Settings>("/api/settings");
+}
+
+// ------------------------------------------------------------------ Projects
+
+export interface CreateProjectInput {
+  name: string;
+  path?: string;
+  description?: string;
+  technologies?: string[];
+  repository?: string;
+  notes?: string;
+}
+
+export async function listProjects(): Promise<Project[]> {
+  return request<Project[]>("/api/projects");
+}
+
+export async function createProject(input: CreateProjectInput): Promise<Project> {
+  return request<Project>("/api/projects", { method: "POST", body: JSON.stringify(input) });
+}
+
+export async function deleteProject(id: number): Promise<void> {
+  await request<void>(`/api/projects/${id}`, { method: "DELETE" });
 }

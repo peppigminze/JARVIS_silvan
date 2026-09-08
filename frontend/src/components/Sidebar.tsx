@@ -1,4 +1,4 @@
-export type View = "chat" | "tasks" | "memory" | "settings";
+export type View = "chat" | "tasks" | "memory" | "projects" | "settings";
 
 interface Props {
   active: View;
@@ -10,6 +10,7 @@ const NAV_ITEMS: { id: View; label: string }[] = [
   { id: "chat", label: "Chat" },
   { id: "tasks", label: "Tasks" },
   { id: "memory", label: "Memory" },
+  { id: "projects", label: "Projects" },
   { id: "settings", label: "Settings" },
 ];
 

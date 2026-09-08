@@ -11,6 +11,7 @@ from app.tools.file_tools import (
     WriteFileTool,
 )
 from app.tools.memory_tools import SaveMemoryTool, SearchMemoryTool
+from app.tools.project_tools import ListProjectsTool
 from app.tools.registry import ToolRegistry
 from app.tools.system_tools import (
     CpuUsageTool,
@@ -44,6 +45,7 @@ def build_default_registry() -> ToolRegistry:
     registry.register(RamUsageTool())
     registry.register(DiskUsageTool())
     registry.register(NetworkStatusTool())
+    registry.register(ListProjectsTool())
 
     # Destructive / task-affecting - CONFIRM_REQUIRED
     registry.register(DeleteTaskTool())

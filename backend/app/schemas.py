@@ -130,6 +130,40 @@ class MemoryOut(BaseModel):
     updated_at: datetime
 
 
+# ---------------------------------------------------------------- Projects
+
+
+class ProjectCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=128)
+    path: Optional[str] = None
+    description: Optional[str] = None
+    technologies: List[str] = Field(default_factory=list)
+    repository: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class ProjectUpdate(BaseModel):
+    path: Optional[str] = None
+    description: Optional[str] = None
+    technologies: Optional[List[str]] = None
+    repository: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class ProjectOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    path: Optional[str]
+    description: Optional[str]
+    technologies: List[str]
+    repository: Optional[str]
+    notes: Optional[str]
+    created_at: datetime
+    updated_at: datetime
+
+
 # ---------------------------------------------------------------- Pending actions (confirmation flow)
 
 

@@ -318,6 +318,34 @@ class CommandLog(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class Project(Base):
+    """A project JARVIS should know about (project spec section 28), so
+    "arbeite an meinem JARVIS-Projekt" resolves to real context (path,
+    tech stack, repo) instead of the model guessing. A brand-new table -
+    no migration risk."""
+
+    __tablename__ = "projects"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    technologies_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    repository: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    @property
+    def technologies(self) -> list[str]:
+        return json.loads(self.technologies_json or "[]")
+
+    @technologies.setter
+    def technologies(self, value: list[str] | None) -> None:
+        self.technologies_json = json.dumps(value or [])
+
+
 def run_migrations() -> None:
     """Additive, idempotent column migrations for tables that predate a
     field (see ensure_columns() in app/database/db.py). Called from

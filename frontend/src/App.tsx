@@ -6,6 +6,7 @@ import { ConfirmBar } from "./components/ConfirmBar";
 import { ChatView } from "./components/ChatView";
 import { TasksView } from "./components/TasksView";
 import { MemoryView } from "./components/MemoryView";
+import { ProjectsView } from "./components/ProjectsView";
 import { SettingsView } from "./components/SettingsView";
 import { getStatus } from "./services/api";
 import { usePolling } from "./hooks/usePolling";
@@ -16,6 +17,7 @@ const TITLES: Record<View, string> = {
   chat: "Chat",
   tasks: "Tasks",
   memory: "Memory",
+  projects: "Projects",
   settings: "Settings",
 };
 
@@ -47,6 +49,7 @@ export default function App() {
           {view === "chat" && <ChatView />}
           {view === "tasks" && <TasksView />}
           {view === "memory" && <MemoryView />}
+          {view === "projects" && <ProjectsView />}
           {view === "settings" && <SettingsView />}
         </div>
       </div>
