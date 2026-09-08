@@ -267,6 +267,9 @@ jarvis/
 
 ## 14. Architektur
 
+> Ausführlicher, aktueller Überblick über das Gesamtsystem (Prozesse,
+> Nachrichtenfluss, Datenmodell, Sicherheitsmodell): [ARCHITECTURE.md](ARCHITECTURE.md)
+
 ```text
                     ┌──────────────────┐
                     │   📱 Handy/PWA   │
