@@ -51,6 +51,13 @@ const TOOL_ACTIVITY_LABEL: Record<string, string> = {
   close_application: "Programm geschlossen",
   run_command: "Befehl ausgeführt",
   list_projects: "Projekte abgerufen",
+  git_status: "Git-Status geprüft",
+  git_diff: "Git-Diff angesehen",
+  git_log: "Git-Historie angesehen",
+  git_branch: "Git-Branches aufgelistet",
+  git_commit: "Git-Commit erstellt",
+  git_push: "Git-Push ausgeführt",
+  git_pull: "Git-Pull ausgeführt",
 };
 
 function toolActivityLabel(tool: string): string {

@@ -12,6 +12,9 @@ const TOOL_LABELS: Record<string, string> = {
   run_command: "Terminal-Befehl ausführen",
   open_application: "Programm öffnen",
   close_application: "Programm schließen",
+  git_commit: "Git-Commit erstellen",
+  git_push: "Git-Push ausführen",
+  git_pull: "Git-Pull ausführen",
 };
 
 const MAX_ARG_PREVIEW = 80;

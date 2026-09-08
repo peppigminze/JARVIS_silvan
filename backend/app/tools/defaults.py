@@ -10,6 +10,15 @@ from app.tools.file_tools import (
     SearchFilesTool,
     WriteFileTool,
 )
+from app.tools.git_tools import (
+    GitBranchTool,
+    GitCommitTool,
+    GitDiffTool,
+    GitLogTool,
+    GitPullTool,
+    GitPushTool,
+    GitStatusTool,
+)
 from app.tools.memory_tools import SaveMemoryTool, SearchMemoryTool
 from app.tools.project_tools import ListProjectsTool
 from app.tools.registry import ToolRegistry
@@ -66,5 +75,14 @@ def build_default_registry() -> ToolRegistry:
 
     # Terminal - always CONFIRM_REQUIRED, plus a hard denylist
     registry.register(RunCommandTool())
+
+    # Git - read-only SAFE, anything changing repo state CONFIRM_REQUIRED
+    registry.register(GitStatusTool())
+    registry.register(GitDiffTool())
+    registry.register(GitLogTool())
+    registry.register(GitBranchTool())
+    registry.register(GitCommitTool())
+    registry.register(GitPushTool())
+    registry.register(GitPullTool())
 
     return registry
